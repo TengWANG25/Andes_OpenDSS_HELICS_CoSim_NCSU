@@ -1,0 +1,209 @@
+{
+  "name": "Transmission",  
+  "coreType": "zmq",                 
+  "simulation_step_time": 1.0,      
+  "total_time": 86400,                
+  "file_name": "IEEE118_converted.xlsx",       
+  "publications": {
+    "bus2_Va": {
+      "topic": "Transmission/Va", 
+      "type": "complex", 
+      "unit": "pu", 
+      "description": "Bus 2 phase A voltage (complex number: magnitude and angle)"
+    },
+    "bus2_Vb": {
+      "topic": "Transmission/Vb", 
+      "type": "complex", 
+      "unit": "pu", 
+      "description": "Bus 2 phase B voltage"
+    },
+    "bus2_Vc": {
+      "topic": "Transmission/Vc", 
+      "type": "complex", 
+      "unit": "pu", 
+      "description": "Bus 2 phase C voltage"
+    },
+  },
+  "subscriptions": {
+    "distribution1_Sa": {
+      "topic": "distribution1/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 1st connected distribution system at bus 2 phase A"
+    },
+    "distribution1_Sb": {
+      "topic": "distribution1/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 1st connected distribution system at bus 2 phase B"
+    },
+    "distribution1_Sc": {
+      "topic": "distribution1/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 1st connected distribution system at bus 2 phase C"
+    },
+    "distribution2_Sa": {
+      "topic": "distribution2/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 2nd connected distribution system at bus 2 phase A"
+    },
+    "distribution2_Sb": {
+      "topic": "distribution2/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 2nd connected distribution system at bus 2 phase B"
+    },
+    "distribution2_Sc": {
+      "topic": "distribution2/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 2nd connected distribution system at bus 2 phase C"
+    },
+    "distribution3_Sa": {
+      "topic": "distribution3/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 3rd connected distribution system at bus 2 phase A"
+    },
+    "distribution3_Sb": {
+      "topic": "distribution3/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 3rd connected distribution system at bus 2 phase B"
+    },
+    "distribution3_Sc": {
+      "topic": "distribution3/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 3rd connected distribution system at bus 2 phase C"
+    },
+    "distribution4_Sa": {
+      "topic": "distribution4/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 4th connected distribution system at bus 2 phase A"
+    },
+    "distribution4_Sb": {
+      "topic": "distribution4/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 4th connected distribution system at bus 2 phase B"
+    },
+    "distribution4_Sc": {
+      "topic": "distribution4/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 4th connected distribution system at bus 2 phase C"
+    },
+    "distribution5_Sa": {
+      "topic": "distribution5/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 5th connected distribution system at bus 2 phase A"
+    },
+    "distribution5_Sb": {
+      "topic": "distribution5/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 5th connected distribution system at bus 2 phase B"
+    },
+    "distribution5_Sc": {
+      "topic": "distribution5/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 5th connected distribution system at bus 2 phase C"
+    },
+    "distribution6_Sa": {
+      "topic": "distribution6/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 6th connected distribution system at bus 2 phase A"
+    },
+    "distribution6_Sb": {
+      "topic": "distribution6/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 6th connected distribution system at bus 2 phase B"
+    },
+    "distribution6_Sc": {
+      "topic": "distribution6/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 6th connected distribution system at bus 2 phase C"
+    },
+    "distribution7_Sa": {
+      "topic": "distribution7/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 7th connected distribution system at bus 2 phase A"
+    },
+    "distribution7_Sb": {
+      "topic": "distribution7/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 7th connected distribution system at bus 2 phase B"
+    },
+    "distribution7_Sc": {
+      "topic": "distribution7/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 7th connected distribution system at bus 2 phase C"
+    },
+    "distribution8_Sa": {
+      "topic": "distribution8/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 8th connected distribution system at bus 2 phase A"
+    },
+    "distribution8_Sb": {
+      "topic": "distribution8/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 8th connected distribution system at bus 2 phase B"
+    },
+    "distribution8_Sc": {
+      "topic": "distribution8/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 8th connected distribution system at bus 2 phase C"
+    },
+    "distribution9_Sa": {
+      "topic": "distribution9/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 9th connected distribution system at bus 2 phase C"
+    },
+    "distribution9_Sb": {
+      "topic": "distribution9/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 9th connected distribution system at bus 2 phase B"
+    },
+    "distribution9_Sc": {
+      "topic": "distribution9/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 9th connected distribution system at bus 2 phase C"
+    },
+    "distribution10_Sa": {
+      "topic": "distribution10/Sa", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 10th connected distribution system at bus 2 phase A"
+    },
+    "distribution10_Sb": {
+      "topic": "distribution10/Sb", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 10th connected distribution system at bus 2 phase B"
+    },
+    "distribution10_Sc": {
+      "topic": "distribution10/Sc", 
+      "type": "complex", 
+      "unit": "VA", 
+      "description": "Power from the 10th connected distribution system at bus 2 phase C"
+    },
+  }
+}

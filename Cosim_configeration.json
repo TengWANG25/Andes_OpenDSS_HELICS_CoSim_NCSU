@@ -1,0 +1,81 @@
+{
+  "name": "ANDES_OpenDSS_Cosim",
+  "coreType": "zmq",
+  "coreInit": "--federates=1 --broker=mainbroker",
+  "time_delta": 1.0,
+  "broker": true,
+  "federates": [
+    {
+      "name": "Transmission",
+      "publications": [
+        {
+          "key": "Bus2Voltage",
+          "type": "complex"
+        }
+      ],
+      "subscriptions": [
+        { "key": "Feeder1_Power", "type": "complex" },
+        { "key": "Feeder2_Power", "type": "complex" },
+        { "key": "Feeder3_Power", "type": "complex" },
+        { "key": "Feeder4_Power", "type": "complex" },
+        { "key": "Feeder5_Power", "type": "complex" },
+        { "key": "Feeder6_Power", "type": "complex" },
+        { "key": "Feeder7_Power", "type": "complex" },
+        { "key": "Feeder8_Power", "type": "complex" },
+        { "key": "Feeder9_Power", "type": "complex" },
+        { "key": "Feeder10_Power", "type": "complex" }
+      ]
+    },
+    {
+      "name": "Feeder1",
+      "subscriptions": [{ "key": "Bus2Voltage", "type": "complex" }],
+      "publications": [{ "key": "Feeder1_Power", "type": "complex" }]
+    },
+    {
+      "name": "Feeder2",
+      "subscriptions": [{ "key": "Bus2Voltage", "type": "complex" }],
+      "publications": [{ "key": "Feeder2_Power", "type": "complex" }]
+    },
+    {
+      "name": "Feeder3",
+      "subscriptions": [{ "key": "Bus2Voltage", "type": "complex" }],
+      "publications": [{ "key": "Feeder3_Power", "type": "complex" }]
+    },
+    {
+      "name": "Feeder4",
+      "subscriptions": [{ "key": "Bus2Voltage", "type": "complex" }],
+      "publications": [{ "key": "Feeder4_Power", "type": "complex" }]
+    },
+    {
+      "name": "Feeder5",
+      "subscriptions": [{ "key": "Bus2Voltage", "type": "complex" }],
+      "publications": [{ "key": "Feeder5_Power", "type": "complex" }]
+    },
+    {
+      "name": "Feeder6",
+      "subscriptions": [{ "key": "Bus2Voltage", 	"type":"complex" }],
+     	"publications":[{	"key":"Feeder6_Power","type":"complex"}]
+    },
+    {
+     	"name":"Feeder7",
+    	"subscriptions":[{	"key":"Bus2Voltage","type":"complex"}],
+    	"publications":[{	"key":"Feeder7_Power","type":"complex"}]
+    },
+    {
+    	"name":"Feeder8",
+    	"subscriptions":[{	"key":"Bus2Voltage","type":"complex"}],
+    	"publications":[{	"key":"Feeder8_Power","type":"complex"}]
+    },
+    {
+    	"name":"Feeder9",
+    	"subscriptions":[{	"key":"Bus2Voltage","type":"complex"}],
+    	"publications":[{	"key":"Feeder9_Power","type":"complex"}]
+    },
+    {
+    	"name":"Feeder10",
+    	"subscriptions":[{	"key":"Bus2Voltage","type":"complex"}],
+    	"publications":[{	"key":"Feeder10_Power","type":"complex"}]
+    }
+
+  ]
+}
