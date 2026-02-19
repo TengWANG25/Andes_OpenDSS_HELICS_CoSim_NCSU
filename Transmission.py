@@ -144,7 +144,7 @@ while current_time < target_time:
         V_angle_rad_new = ss.dae.y[ss.Bus.a.a[bus2_idx]] # New Voltage angle at bus 2 in radians
         bus2_voltage_complex_new = Vmag_new * complex(math.cos(V_angle_rad_new), math.sin(V_angle_rad_new)) 
         # Apply smoothing to voltage updates
-        # bus2_voltage_complex_new = alpha * bus2_voltage_complex_new + (1 - alpha) * Vprev
+        bus2_voltage_complex_new = alpha * bus2_voltage_complex_new + (1 - alpha) * Vprev
 
         # Check the new voltage
         print(f"[iter={iter_count:06d} t={current_time:.3f}s] Bus2 V={bus2_voltage_complex_new:.6f}") # Log new voltage
