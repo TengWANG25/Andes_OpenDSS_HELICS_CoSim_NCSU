@@ -3,7 +3,7 @@ Copyright (C) 2015-2026 Hantao Cui
 
 ANDES comes with ABSOLUTELY NO WARRANTY
 Case file: /home/teng/benchmark_118_10_8500_Andes_OpenDSS/IEEE_118_final_conversion.xlsx
-Report time: 02/18/2026 11:25:21 AM
+Report time: 02/25/2026 03:06:30 PM
 
 Power flow converged in 4 iterations.
 Flat-start: No

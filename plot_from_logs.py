@@ -190,6 +190,7 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         x_v, _ = _time_axis_seconds_or_hours(d_v["t_granted"])
         ax[1].plot(x_v, d_v["Vmag"])
         ax[1].set_ylabel(f"Bus {bus} |V| (pu)")
+        ax[1].set_ylim(0.9, 1.0)
     ax[1].set_xlabel(xlabel)
 
 

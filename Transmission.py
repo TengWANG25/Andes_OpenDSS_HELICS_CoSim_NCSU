@@ -153,6 +153,7 @@ while current_time < target_time:
         h.helicsPublicationPublishComplex(pubV, bus2_voltage_complex_new) # Publish updated voltage
         bus2_voltage_complex = bus2_voltage_complex_new # Update for next iteration
 
+        # Check for convergence: if voltage change is within tolerance, we can stop iterating
         if abs(bus2_voltage_complex_new - Vprev) < tolV:
             iter_req = h.HELICS_ITERATION_REQUEST_NO_ITERATION
         else:
