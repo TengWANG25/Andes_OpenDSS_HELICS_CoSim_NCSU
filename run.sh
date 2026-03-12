@@ -12,7 +12,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT # Trap signals for cleanup
 
 # Start broker
-helics_broker -t zmq -f 11 --name=mainbroker --port=$PORT --loglevel=trace > broker.log 2>&1 & # Start HELICS broker
+python3 -u broker.py > broker.log 2>&1 & # Start HELICS broker
 BROKER_PID=$!
 
 # Wait for broker port

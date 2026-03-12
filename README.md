@@ -29,3 +29,38 @@ docker run --rm -it \
   -v "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU \
   andes-opendss-helics-cosim
 ```
+
+
+## Apptainer setup
+
+Build the image:
+
+```bash
+apptainer build andes-opendss-helics-cosim.sif Apptainer.def
+```
+
+Run the co-simulation:
+```bash
+apptainer run --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif
+```
+
+Run with an explicit command:
+
+```bash
+apptainer exec --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+```
+
+Open an interactive shell:
+
+```bash
+apptainer shell --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif
+```
+
+Inside shell:
+
+```bash
+cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU
+./run.sh
+```
+
+> Note: `apptainer build` typically needs root (`sudo`)
