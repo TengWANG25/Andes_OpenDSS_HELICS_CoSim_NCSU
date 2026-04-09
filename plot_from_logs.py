@@ -173,7 +173,7 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
     plt.savefig(out_dir / f"bus{bus}_voltage_vs_time.png", dpi=300)
     plt.close()
 
-    # 3) Combined vertical subplots (shared x-axis)
+    # 3) Combined vertical subplots
     fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8.5, 6.5))
 
     # Top: P/Q
@@ -183,17 +183,21 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         ax[0].plot(x_pq, d_pq["Q_total"], label="Q_total (pu)")
         ax[0].set_ylabel("Total Load (pu)")
         ax[0].legend()
-    ax[0].set_title("Total Load and Voltage vs Time")
+    ax[0].set_title("Aggregated feeder load")
+    ax[0].grid(True)
 
     # Bottom: Vmag
     if len(d_v):
         x_v, _ = _time_axis_seconds_or_hours(d_v["t_granted"])
-        ax[1].plot(x_v, d_v["Vmag"])
+        ax[1].plot(x_v, d_v["Vmag"], label=f"Bus {bus} |V|")
         ax[1].set_ylabel(f"Bus {bus} |V| (pu)")
         ax[1].set_ylim(0.9, 1.0)
+        ax[1].set_title(f"Transmission bus {bus} voltage")
+        ax[1].legend()
     ax[1].set_xlabel(xlabel)
+    ax[1].grid(True)
 
-
+    fig.suptitle("ANDES-OpenDSS Co-simulation: Load and Voltage vs Time", fontsize=14)
     plt.tight_layout()
     plt.savefig(out_dir / f"total_pq_and_bus{bus}_voltage_vs_time.png", dpi=300)
     plt.close(fig)
@@ -204,7 +208,6 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
     # Top: P/Q
     if len(d_pq):
         x_pq, _ = _time_axis_seconds_or_hours(d_pq["t_granted"])
-        ax[0].plot(x_pq, d_pq["P_total"], label="P_total (pu)")
         ax[0].plot(x_pq, d_pq["Q_total"], label="Q_total (pu)")
         ax[0].set_ylabel("Total Load (pu)")
         ax[0].legend()

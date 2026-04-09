@@ -7,6 +7,52 @@ import opendssdirect as dss
 from pathlib import Path
 
 feeder_index = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+DEFAULT_DIST_VOLTAGE_BUS = "regxfmr_hvmv_sub_lsb"
+dist_voltage_bus = (
+    sys.argv[2]
+    if len(sys.argv) > 2
+    else os.environ.get("DIST_VOLTAGE_BUS", DEFAULT_DIST_VOLTAGE_BUS)  # feeder-head bus voltage
+)
+
+# Read the phase voltage from a dictionary, return NaN if the phase is not present
+def _phase_value(phase_map, phase: int) -> float:
+    return phase_map.get(phase, math.nan)
+
+
+def get_bus_voltage_snapshot(bus_name: str) -> dict:
+    dss.Circuit.SetActiveBus(bus_name)
+    active_bus = dss.Bus.Name()
+    if active_bus.lower() != bus_name.lower():
+        raise RuntimeError(
+            f"Requested distribution voltage bus '{bus_name}' but OpenDSS activated '{active_bus}'."
+        )
+
+    pu_mag_angle = dss.Bus.puVmagAngle()
+    nodes = dss.Bus.Nodes()
+
+    phase_mags = {}
+    phase_angles = {}
+    for idx, node in enumerate(nodes):
+        mag_idx = 2 * idx
+        ang_idx = mag_idx + 1
+        if ang_idx >= len(pu_mag_angle):
+            continue
+        phase_mags[node] = pu_mag_angle[mag_idx]
+        phase_angles[node] = pu_mag_angle[ang_idx]
+
+    present_phase_mags = [phase_mags[node] for node in sorted(phase_mags)]
+    avg_mag = (
+        sum(present_phase_mags) / len(present_phase_mags)
+        if present_phase_mags
+        else math.nan
+    )
+
+    return {
+        "bus": active_bus,
+        "avg_mag": avg_mag,
+        "phase_mags": phase_mags,
+        "phase_angles": phase_angles,
+    }
 
 # 1. HELICS Setup
 fedinfo = h.helicsCreateFederateInfo()
@@ -35,6 +81,15 @@ dss.Text.Command("set controlmode=off")   # freeze controls (regulators/caps)
 dss.Text.Command("set mode=snap")         # single snapshot power flow
 dss.Text.Command("set maxcontroliter=100")  # optional safety
 dss.Solution.Solve()
+initial_dist_bus_snapshot = get_bus_voltage_snapshot(dist_voltage_bus)
+print(
+    f"Feeder {feeder_index}: Tracking distribution bus "
+    f"'{initial_dist_bus_snapshot['bus']}' "
+    f"(Vavg={initial_dist_bus_snapshot['avg_mag']:.4f} pu, "
+    f"Va={_phase_value(initial_dist_bus_snapshot['phase_mags'], 1):.4f} pu, "
+    f"Vb={_phase_value(initial_dist_bus_snapshot['phase_mags'], 2):.4f} pu, "
+    f"Vc={_phase_value(initial_dist_bus_snapshot['phase_mags'], 3):.4f} pu)."
+)
 
 #### Load Profile Definition
 #PROFILE_24 = [
@@ -107,8 +162,11 @@ while current_time < target_time:
         dss.Text.Command(f"set loadmult={last_loadmult:.4f}")
         last_time_applied = current_time
     
-    dss.Text.Command(f"Edit Vsource.Source pu={Vmag:.4f} angle={Vangle:.2f}") # Update source voltage
+    dss.Text.Command(
+        f"Edit Vsource.Source pu={Vmag:.6f} angle={Vangle:.6f}"
+    ) # Update source voltage with enough precision to avoid quantization flip-flop
     dss.Solution.Solve()
+    dist_bus_snapshot = get_bus_voltage_snapshot(dist_voltage_bus)
 
     # Calculate Power in pu
     totalPQ = dss.Circuit.TotalPower()  # kW/kvar
@@ -123,9 +181,14 @@ while current_time < target_time:
         f"iter={iter_count:06d} "
         f"t_granted={current_time:.3f}s (t_req={next_time:.3f}s, dt={dt:.3f}s) "
         f"state={state_str} | "
-        f"Vupdate={updated} V={Vmag:.4f} pu ang={Vangle:.2f} deg | "
+        f"Vupdate={updated} V={Vmag:.6f} pu ang={Vangle:.6f} deg | "
+        f"DistBus={dist_bus_snapshot['bus']} "
+        f"Vavg={dist_bus_snapshot['avg_mag']:.6f} pu "
+        f"Va={_phase_value(dist_bus_snapshot['phase_mags'], 1):.6f} pu "
+        f"Vb={_phase_value(dist_bus_snapshot['phase_mags'], 2):.6f} pu "
+        f"Vc={_phase_value(dist_bus_snapshot['phase_mags'], 3):.6f} pu | "
         f"TotalPower={totalPQ[0]:.2f} kW, {totalPQ[1]:.2f} kvar | "
-        f"Pub={P_pu:.6f}+j{Q_pu:.6f} pu"
+        f"Pub={P_pu:.6f}+j{Q_pu:.6f} pu "
         f"LoadMult={last_loadmult:.4f} | "
     ) # Log iteration details
 
