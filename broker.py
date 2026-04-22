@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Start and hold a HELICS broker process for co-simulation."""
 
+import os
 import time
 import helics as h
 
 
 def main() -> None:
-    broker = h.helicsCreateBroker("zmq", "mainbroker", "--federates=11 --port=23406")
+    federates = int(os.environ.get("BROKER_FEDERATES", "11"))
+    port = int(os.environ.get("BROKER_PORT", "23406"))
+    init_string = f"--federates={federates} --port={port}"
+
+    print(f"Broker: starting with federates={federates} port={port}")
+    broker = h.helicsCreateBroker("zmq", "mainbroker", init_string)
     if not h.helicsBrokerIsConnected(broker):
         raise RuntimeError("Failed to start HELICS broker")
 

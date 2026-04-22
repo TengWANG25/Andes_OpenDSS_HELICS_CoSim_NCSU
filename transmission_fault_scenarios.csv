@@ -1,0 +1,8 @@
+enabled,name,kind,target_time,tds_tstep,line_idx,bus,start_time,clear_time,xf,rf,notes
+1,Line_124_5ms,line_trip,30.0,0.001,Line_124,,1.0,1.005,,,Existing double-circuit 77-80 branch trip and reclose
+1,Line_124_10ms,line_trip,30.0,0.001,Line_124,,1.0,1.01,,,Slightly longer temporary trip on Line_124
+1,Line_85_10ms,line_trip,30.0,0.001,Line_85,,1.0,1.01,,,Existing double-circuit 56-59 branch trip and reclose
+1,Line_142_10ms,line_trip,30.0,0.001,Line_142,,1.0,1.01,,,Existing double-circuit 89-92 branch trip and reclose
+1,Bus77_fault_20ms_xf0p1,bus_fault,30.0,0.001,,77,1.0,1.02,0.1,0.0,Temporary bus fault near the 77-80 corridor
+1,Bus80_fault_20ms_xf0p1,bus_fault,30.0,0.001,,80,1.0,1.02,0.1,0.0,Temporary bus fault on the paired corridor endpoint
+0,Line_124_permanent,line_trip,30.0,0.001,Line_124,,1.0,,,,Leave clear_time blank for a permanent line trip

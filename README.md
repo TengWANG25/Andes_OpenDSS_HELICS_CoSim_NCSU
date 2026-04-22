@@ -12,6 +12,12 @@ To plot the transmission-side bus voltage after a run:
 python3 plot_from_logs.py --log transmission.log
 ```
 
+`plot_from_logs.py` now prefers the structured file `transmission_timeseries.csv`
+when it is present beside `transmission.log`. Legacy detailed transmission logs
+are still supported, and sparse transmission logs can still be plotted if the
+matching `feeder_*.log` files are present so the interface time series can be
+reconstructed.
+
 To plot the distribution-side bus voltage from a feeder log:
 
 ```bash

@@ -1,0 +1,15 @@
+Small-Signal Stability Check
+case: /home/teng/benchmark_118_10_8500_Andes_OpenDSS/IEEE118_from_PDF.xlsx
+built_in_toggles_disabled: True
+distload_source: none
+distload_p: none
+distload_q: none
+eig_tolerance: 1e-06
+small_signal_stable: True
+unstable_modes: 0
+zero_modes: 1
+stable_modes: 227
+largest_real_part: -0.000000000
+top_states_per_unstable_mode: 10
+eigenvalue_csv: /home/teng/benchmark_118_10_8500_Andes_OpenDSS/small_signal_check_results/small_signal_eigenvalues.csv
+unstable_modes_csv: /home/teng/benchmark_118_10_8500_Andes_OpenDSS/small_signal_check_results/small_signal_unstable_modes.csv

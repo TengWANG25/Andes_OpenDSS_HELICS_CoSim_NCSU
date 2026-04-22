@@ -11,13 +11,53 @@ DEFAULT_DIST_VOLTAGE_BUS = "regxfmr_hvmv_sub_lsb"
 dist_voltage_bus = (
     sys.argv[2]
     if len(sys.argv) > 2
-    else os.environ.get("DIST_VOLTAGE_BUS", DEFAULT_DIST_VOLTAGE_BUS)  # feeder-head bus voltage
+    else os.environ.get("DIST_VOLTAGE_BUS", DEFAULT_DIST_VOLTAGE_BUS)
 )
 
-# Read the phase voltage from a dictionary, return NaN if the phase is not present
+
+def get_target_time() -> float:
+    value = os.environ.get("SIM_TARGET_TIME", "10.0")
+    try:
+        target = float(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid SIM_TARGET_TIME='{value}'. Expected a positive float in seconds."
+        ) from exc
+    if target <= 0.0:
+        raise ValueError(
+            f"Invalid SIM_TARGET_TIME='{value}'. Expected a positive float in seconds."
+        )
+    return target
+
+
+def get_positive_env_float(name: str, default: float) -> float:
+    value = os.environ.get(name, str(default))
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid {name}='{value}'. Expected a positive float in seconds."
+        ) from exc
+    if parsed <= 0.0:
+        raise ValueError(
+            f"Invalid {name}='{value}'. Expected a positive float in seconds."
+        )
+    return parsed
+
+
+def get_cosim_step_config():
+    fine_dt = get_positive_env_float("SIM_FINE_DT", 0.01)
+    coarse_dt = get_positive_env_float("SIM_COARSE_DT", 0.05)
+    coarse_start = get_positive_env_float("SIM_COARSE_START", 2.05)
+    if coarse_dt < fine_dt:
+        raise ValueError(
+            f"Invalid co-simulation step schedule: SIM_COARSE_DT={coarse_dt} "
+            f"must be >= SIM_FINE_DT={fine_dt}."
+        )
+    return fine_dt, coarse_dt, coarse_start
+
 def _phase_value(phase_map, phase: int) -> float:
     return phase_map.get(phase, math.nan)
-
 
 def get_bus_voltage_snapshot(bus_name: str) -> dict:
     dss.Circuit.SetActiveBus(bus_name)
@@ -41,11 +81,7 @@ def get_bus_voltage_snapshot(bus_name: str) -> dict:
         phase_angles[node] = pu_mag_angle[ang_idx]
 
     present_phase_mags = [phase_mags[node] for node in sorted(phase_mags)]
-    avg_mag = (
-        sum(present_phase_mags) / len(present_phase_mags)
-        if present_phase_mags
-        else math.nan
-    )
+    avg_mag = sum(present_phase_mags) / len(present_phase_mags) if present_phase_mags else math.nan
 
     return {
         "bus": active_bus,
@@ -54,58 +90,50 @@ def get_bus_voltage_snapshot(bus_name: str) -> dict:
         "phase_angles": phase_angles,
     }
 
-# 1. HELICS Setup
+def solve_distribution_from_source(V_complex):
+    Vmag = abs(V_complex)
+    Vangle = math.degrees(math.atan2(V_complex.imag, V_complex.real))
+    dss.Text.Command(f"Edit Vsource.Source pu={Vmag:.6f} angle={Vangle:.6f}")
+    dss.Solution.Solve()
+
+    dist_bus_snapshot = get_bus_voltage_snapshot(dist_voltage_bus)
+    totalPQ = dss.Circuit.TotalPower()  # kW, kvar
+    P_pu = -totalPQ[0] / 100000.0
+    Q_pu = -totalPQ[1] / 100000.0
+
+    return complex(P_pu, Q_pu), totalPQ, dist_bus_snapshot, Vmag, Vangle
+
+# 1. HELICS setup
 fedinfo = h.helicsCreateFederateInfo()
 h.helicsFederateInfoSetCoreTypeFromString(fedinfo, "zmq")
 h.helicsFederateInfoSetCoreInitString(
     fedinfo, "--federates=1 --broker=tcp://127.0.0.1:23406"
-) # Match broker settings with Transmission.py
-dt = 300.0 # Time step in seconds
-h.helicsFederateInfoSetTimeProperty(fedinfo, h.HELICS_PROPERTY_TIME_DELTA, dt)
+)
+fine_dt, coarse_dt, coarse_start = get_cosim_step_config()
+h.helicsFederateInfoSetTimeProperty(
+    fedinfo, h.HELICS_PROPERTY_TIME_DELTA, min(fine_dt, coarse_dt)
+)
 h.helicsFederateInfoSetFlagOption(fedinfo, h.HELICS_FLAG_UNINTERRUPTIBLE, True)
 dist_fed = h.helicsCreateValueFederate(f"Feeder{feeder_index}", fedinfo)
+
 subV = h.helicsFederateRegisterSubscription(dist_fed, "Bus2Voltage", "")
-pubS = h.helicsFederateRegisterGlobalPublication(dist_fed, f"Feeder{feeder_index}_Power", h.HELICS_DATA_TYPE_COMPLEX, "")
-h.helicsPublicationSetOption(
-    pubS, h.HELICS_HANDLE_OPTION_ONLY_TRANSMIT_ON_CHANGE, 1
-) # Only publish on change
-h.helicsFederateEnterExecutingMode(dist_fed)
-print(f"Feeder {feeder_index}: Connected.")
-
-# 2. OpenDSS Setup
-SCRIPT_DIR = Path(__file__).resolve().parent # Get current script directory
-master_dss = (SCRIPT_DIR / "8500Node" / "Master.dss").resolve() # Path to Master DSS file
-dss.Basic.ClearAll() # Clear previous DSS data
-dss.Text.Command(f'Compile "{master_dss}"') # Compile the DSS file
-dss.Text.Command("set controlmode=off")   # freeze controls (regulators/caps)
-dss.Text.Command("set mode=snap")         # single snapshot power flow
-dss.Text.Command("set maxcontroliter=100")  # optional safety
-dss.Solution.Solve()
-initial_dist_bus_snapshot = get_bus_voltage_snapshot(dist_voltage_bus)
-print(
-    f"Feeder {feeder_index}: Tracking distribution bus "
-    f"'{initial_dist_bus_snapshot['bus']}' "
-    f"(Vavg={initial_dist_bus_snapshot['avg_mag']:.4f} pu, "
-    f"Va={_phase_value(initial_dist_bus_snapshot['phase_mags'], 1):.4f} pu, "
-    f"Vb={_phase_value(initial_dist_bus_snapshot['phase_mags'], 2):.4f} pu, "
-    f"Vc={_phase_value(initial_dist_bus_snapshot['phase_mags'], 3):.4f} pu)."
+pubS = h.helicsFederateRegisterGlobalPublication(
+    dist_fed, f"Feeder{feeder_index}_Power", h.HELICS_DATA_TYPE_COMPLEX, ""
 )
+h.helicsPublicationSetOption(pubS, h.HELICS_HANDLE_OPTION_ONLY_TRANSMIT_ON_CHANGE, 1)
 
-#### Load Profile Definition
-#PROFILE_24 = [
-#   0.65, 0.60, 0.58, 0.57, 0.58, 0.62,
-#   0.70, 0.80, 0.90, 0.95, 0.98, 1.00,
-#   0.98, 0.95, 0.92, 0.95, 1.00, 1.08,
-#   1.12, 1.05, 0.95, 0.85, 0.75, 0.68
-#]
+print(f"Feeder {feeder_index}: HELICS interfaces created.")
 
+# 2. OpenDSS setup
+SCRIPT_DIR = Path(__file__).resolve().parent
+master_dss = (SCRIPT_DIR / "8500Node" / "Master.dss").resolve()
+dss.Basic.ClearAll()
+dss.Text.Command(f'Compile "{master_dss}"')
+dss.Text.Command("set controlmode=off")
+dss.Text.Command("set mode=snap")
+dss.Text.Command("set maxcontroliter=100")
 
-PROFILE_24 = [
-    1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1,
-    ]
+PROFILE_24 = [1] * 24
 
 def loadmult_from_time(t_sec: float) -> float:
     t_day = t_sec % 86400.0
@@ -116,14 +144,75 @@ def loadmult_from_time(t_sec: float) -> float:
     return PROFILE_24[i0] * (1.0 - frac) + PROFILE_24[i1] * frac
 
 last_time_applied = -1.0
-last_loadmult = 1.0
-#####
+last_loadmult = loadmult_from_time(0.0)
+dss.Text.Command(f"set loadmult={last_loadmult:.4f}")
 
-# 3. Iteration Loop
-target_time = 86400.0 # 24 hours in seconds
+# ---- HELICS initialization handshake at t = 0 ----
+max_init = 20
+tol_init_v = 1e-6
+tol_init_s = 1e-6
+
+V_last = 1.0 + 0.0j
+V_prev = None
+
+S_prev, totalPQ, dist_bus_snapshot, Vmag, Vangle = solve_distribution_from_source(V_last)
+
+print(
+    f"Feeder {feeder_index}: initial guess "
+    f"V={Vmag:.6f} pu ang={Vangle:.6f} deg "
+    f"P={S_prev.real:.6f} Q={S_prev.imag:.6f}"
+)
+
+h.helicsFederateEnterInitializingMode(dist_fed)
+print(f"Feeder {feeder_index}: entered HELICS initialization mode.")
+
+
+# Publish initial feeder power guess before first iterative entry
+h.helicsPublicationPublishComplex(pubS, S_prev)
+
+for k in range(max_init):
+    init_state = h.helicsFederateEnterExecutingModeIterative(
+        dist_fed, h.HELICS_ITERATION_REQUEST_ITERATE_IF_NEEDED
+    )
+
+    if h.helicsInputIsUpdated(subV):
+        V_last = h.helicsInputGetComplex(subV)
+
+    S_new, totalPQ, dist_bus_snapshot, Vmag, Vangle = solve_distribution_from_source(V_last)
+
+    dV = float("inf") if V_prev is None else abs(V_last - V_prev)
+    dS = abs(S_new - S_prev)
+
+    print(
+        f"[Feeder{feeder_index:02d} init {k+1:02d}] "
+        f"V={Vmag:.6f} pu ang={Vangle:.6f} deg "
+        f"P={S_new.real:.6f} Q={S_new.imag:.6f} "
+        f"dV={dV:.3e} dS={dS:.3e}"
+    )
+
+    if dV > tol_init_v or dS > tol_init_s:
+        h.helicsPublicationPublishComplex(pubS, S_new)
+
+    V_prev = V_last
+    S_prev = S_new
+
+    if init_state == h.HELICS_ITERATION_RESULT_NEXT_STEP:
+        break
+else:
+    raise RuntimeError(f"Feeder {feeder_index}: initialization handshake did not converge.")
+
+print(f"Feeder {feeder_index}: initialization handshake converged.")
+
+# 3. Normal time loop starts here
+target_time = get_target_time()
+print(f"Feeder {feeder_index}: target simulation time = {target_time:.3f} s")
+print(
+    f"Feeder {feeder_index}: co-simulation step schedule = "
+    f"{fine_dt:.3f}s until t={coarse_start:.3f}s, then {coarse_dt:.3f}s"
+)
 current_time = 0.0
+iter_count = 0
 
-# Define iteration state names for logging
 ITER_STATE_NAME = {
     h.HELICS_ITERATION_RESULT_NEXT_STEP: "NEXT_STEP",
     h.HELICS_ITERATION_RESULT_ITERATING: "ITERATING",
@@ -131,55 +220,33 @@ ITER_STATE_NAME = {
     h.HELICS_ITERATION_RESULT_HALTED: "HALTED",
 }
 
-# Initialize iteration counter
-iter_count = 0
-
-V_last = 1.0 + 0.0j  # Initial voltage guess
 while current_time < target_time:
-
-    next_time = min(current_time + dt, target_time) # Next time step
-
+    current_dt = fine_dt if current_time + 1e-9 < coarse_start else coarse_dt
+    next_time = min(current_time + current_dt, target_time)
     granted_time, iteration_state = h.helicsFederateRequestTimeIterative(
         dist_fed, next_time, h.HELICS_ITERATION_REQUEST_ITERATE_IF_NEEDED
     )
 
-    current_time = granted_time # Update current time
-    iter_count += 1 # Increment iteration counter
+    current_time = granted_time
+    iter_count += 1
 
-    # Get Voltage from Transmission
-    updated = h.helicsInputIsUpdated(subV)     
+    updated = h.helicsInputIsUpdated(subV)
     if updated:
-        V_last = h.helicsInputGetComplex(subV) # read only when updated
-
-    V = V_last  # Use last known voltage if not updated
-
-    # Update OpenDSS Source
-    Vmag = abs(V)
-    Vangle = math.degrees(math.atan2(V.imag, V.real)) # Convert to degrees for OpenDSS
+        V_last = h.helicsInputGetComplex(subV)
 
     if current_time > last_time_applied + 1e-9:
         last_loadmult = loadmult_from_time(current_time)
         dss.Text.Command(f"set loadmult={last_loadmult:.4f}")
         last_time_applied = current_time
-    
-    dss.Text.Command(
-        f"Edit Vsource.Source pu={Vmag:.6f} angle={Vangle:.6f}"
-    ) # Update source voltage with enough precision to avoid quantization flip-flop
-    dss.Solution.Solve()
-    dist_bus_snapshot = get_bus_voltage_snapshot(dist_voltage_bus)
 
-    # Calculate Power in pu
-    totalPQ = dss.Circuit.TotalPower()  # kW/kvar
-    P_pu = - totalPQ[0] / 100000.0      # 100 MVA base
-    Q_pu = - totalPQ[1] / 100000.0      # Sign adjustment for load convention
+    S_new, totalPQ, dist_bus_snapshot, Vmag, Vangle = solve_distribution_from_source(V_last)
+    h.helicsPublicationPublishComplex(pubS, S_new)
 
-    h.helicsPublicationPublishComplex(pubS, complex(P_pu, Q_pu)) # Publish power to Transmission
-
-    state_str = ITER_STATE_NAME.get(iteration_state, str(iteration_state)) # `state_str` definition
+    state_str = ITER_STATE_NAME.get(iteration_state, str(iteration_state))
     print(
         f"[Feeder{feeder_index:02d}] "
         f"iter={iter_count:06d} "
-        f"t_granted={current_time:.3f}s (t_req={next_time:.3f}s, dt={dt:.3f}s) "
+        f"t_granted={current_time:.3f}s (t_req={next_time:.3f}s, dt={current_dt:.3f}s) "
         f"state={state_str} | "
         f"Vupdate={updated} V={Vmag:.6f} pu ang={Vangle:.6f} deg | "
         f"DistBus={dist_bus_snapshot['bus']} "
@@ -188,11 +255,10 @@ while current_time < target_time:
         f"Vb={_phase_value(dist_bus_snapshot['phase_mags'], 2):.6f} pu "
         f"Vc={_phase_value(dist_bus_snapshot['phase_mags'], 3):.6f} pu | "
         f"TotalPower={totalPQ[0]:.2f} kW, {totalPQ[1]:.2f} kvar | "
-        f"Pub={P_pu:.6f}+j{Q_pu:.6f} pu "
-        f"LoadMult={last_loadmult:.4f} | "
-    ) # Log iteration details
+        f"Pub={S_new.real:.6f}+j{S_new.imag:.6f} pu "
+        f"LoadMult={last_loadmult:.4f}"
+    )
 
-
-h.helicsFederateDisconnect(dist_fed) # Disconnect federate
-h.helicsFederateFree(dist_fed) # Free federate resources
+h.helicsFederateDisconnect(dist_fed)
+h.helicsFederateFree(dist_fed)
 print(f"Feeder {feeder_index}: Finished.")

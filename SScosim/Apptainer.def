@@ -1,0 +1,41 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.10
+
+%labels
+    Maintainer TengWANG25
+    Description "ANDES + OpenDSS + HELICS co-simulation runtime"
+
+%files
+    . /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU
+
+%post
+    set -eux
+
+    apt-get update
+    apt-get install -y --no-install-recommends bash iproute2 tini
+    rm -rf /var/lib/apt/lists/*
+
+    micromamba install -y -n base --override-channels -c conda-forge \
+      python=3.11 \
+      pip
+    micromamba clean --all --yes
+
+    micromamba run -n base python -m pip install --no-cache-dir \
+      helics \
+      helics-apps \
+      andes \
+      opendssdirect.py \
+      pandas
+
+    chmod +x /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+
+%environment
+    export PATH=/opt/conda/bin:$PATH
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%runscript
+    exec /usr/bin/tini -- bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+
+%startscript
+    exec /usr/bin/tini -- bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
