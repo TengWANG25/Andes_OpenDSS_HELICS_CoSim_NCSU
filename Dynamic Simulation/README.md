@@ -57,10 +57,10 @@ The co-simulation step defaults are:
 | Variable | Default | Meaning |
 | --- | ---: | --- |
 | `TARGET_TIME` | `10.0` | End time in seconds |
-| `FINE_DT` | `0.01` | HELICS/OpenDSS co-simulation step before `COARSE_START` |
+| `FINE_DT` | `0.03` | HELICS/OpenDSS co-simulation step before `COARSE_START` |
 | `COARSE_DT` | `0.03` | HELICS/OpenDSS co-simulation step after `COARSE_START` |
 | `COARSE_START` | `1.60` | Time to switch to `COARSE_DT` |
-| `TX_TDS_STEP` | `min(FINE_DT / 5, 0.001)` | ANDES internal TDS step |
+| `TX_TDS_STEP` | `0.033` | ANDES internal TDS step |
 
 Examples:
 

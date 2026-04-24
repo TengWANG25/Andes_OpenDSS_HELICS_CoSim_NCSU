@@ -67,7 +67,7 @@ ITER_STATE_NAME = {
 # ANDES Fault is a balanced three-phase bus fault. Keep the default at the
 # transmission/distribution interface bus so the feeder sees the voltage sag.
 FAULT_IDX = "Fault_Bus2_3PH"
-FAULT_BUS_DEFAULT = 80
+FAULT_BUS_DEFAULT = 2
 FAULT_TIME_DEFAULT = 1.0
 FAULT_DURATION_DEFAULT = 0.08
 FAULT_RF_DEFAULT = 0.0
