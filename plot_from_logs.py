@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import math
+import os
 import re
 from pathlib import Path
 
@@ -27,6 +28,15 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+from fidvr_alerts import (
+    ALERT_COLORS,
+    DEFAULT_OVERVOLTAGE_LOOKAHEAD_S,
+    DEFAULT_OVERVOLTAGE_ALERT_PU,
+    DEFAULT_STALL_ALERT_VOLTAGE_PU,
+    alert_summary_lines,
+    detect_fidvr_alerts,
+)
 
 
 TRANSMISSION_COLUMNS = [
@@ -41,6 +51,16 @@ TRANSMISSION_COLUMNS = [
 ]
 
 OPTIONAL_TRANSMISSION_COLUMNS = [
+    "outer_iter",
+    "cosim_dt",
+    "tx_tds_step",
+    "fault_idx",
+    "fault_bus",
+    "fault_active",
+    "fault_rf",
+    "fault_xf",
+    "fault_bus_vmag",
+    "fault_bus_vang_rad",
     "event_line_idx",
     "event_bus1",
     "event_bus2",
@@ -50,6 +70,10 @@ OPTIONAL_TRANSMISSION_COLUMNS = [
     "event_bus2_vmag",
     "event_bus2_vang_rad",
     "event_bus_angle_diff_deg",
+    "postfault_line_idx",
+    "postfault_bus1",
+    "postfault_bus2",
+    "postfault_line_status",
     "delta_min_deg",
     "delta_max_deg",
     "delta_spread_deg",
@@ -72,9 +96,27 @@ OPTIONAL_TRANSMISSION_COLUMNS = [
     "vf_max_bus",
 ]
 
-EXPECTED_FEEDERS = tuple(range(1, 11))
 FEEDER_VOLTAGE_TOL = 5e-6
 FEEDER_ANGLE_TOL_DEG = 5e-6
+FIDVR_STAGE_LABELS = {
+    "FAULT_ACTIVE": "Fault",
+    "STALLED_MOTORS": "Stalled Motors",
+    "OVERSHOOT": "Overshoot",
+    "CAPS_OFF": "Caps Off",
+    "LOAD_RESTORATION": "Load Restoration",
+}
+FIDVR_STAGE_COLORS = {
+    "FAULT_ACTIVE": "#d73027",
+    "STALLED_MOTORS": "#fc8d59",
+    "OVERSHOOT": "#91bfdb",
+    "CAPS_OFF": "#4575b4",
+    "LOAD_RESTORATION": "#74add1",
+}
+ALERT_TEXT_Y = {
+    "Alert.1": 0.06,
+    "Alert.2": 0.13,
+    "Alert.3": 0.20,
+}
 
 
 def parse_transmission_log(log_path: Path, bus: int = 2) -> pd.DataFrame:
@@ -230,24 +272,34 @@ def parse_feeder_runtime_log(log_path: Path) -> pd.DataFrame:
 
 def select_settled_rows(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
     return (
-        df.assign(state_rank=(df["state"] == "NEXT_STEP").astype(int))
-        .sort_values(group_cols + ["state_rank", "iter"])
+        df.assign(
+            update_rank=df["vupdate"].astype(int),
+            state_rank=(df["state"] == "NEXT_STEP").astype(int),
+        )
+        .sort_values(group_cols + ["update_rank", "state_rank", "iter"])
         .groupby(group_cols, as_index=False)
         .last()
         .sort_values(group_cols)
-        .drop(columns=["state_rank"])
+        .drop(columns=["update_rank", "state_rank"])
         .reset_index(drop=True)
     )
 
 
+def discover_feeder_logs(log_path: Path) -> list[Path]:
+    feeder_logs = []
+    for feeder_log in sorted(log_path.parent.glob("feeder_*.log")):
+        match = re.fullmatch(r"feeder_(\d+)\.log", feeder_log.name)
+        if match:
+            feeder_logs.append((int(match.group(1)), feeder_log))
+
+    if not feeder_logs:
+        raise RuntimeError("No feeder_*.log files were found beside the transmission log.")
+
+    return [path for _, path in sorted(feeder_logs)]
+
+
 def reconstruct_from_feeder_logs(log_path: Path) -> pd.DataFrame:
-    feeder_logs = [log_path.parent / f"feeder_{idx}.log" for idx in EXPECTED_FEEDERS]
-    missing_logs = [path.name for path in feeder_logs if not path.exists()]
-    if missing_logs:
-        missing_str = ", ".join(missing_logs)
-        raise RuntimeError(
-            f"Cannot reconstruct from feeder logs. Missing: {missing_str}"
-        )
+    feeder_logs = discover_feeder_logs(log_path)
 
     feeder_frames = []
     malformed_logs = []
@@ -270,13 +322,14 @@ def reconstruct_from_feeder_logs(log_path: Path) -> pd.DataFrame:
 
     combined = pd.concat(feeder_frames, ignore_index=True)
 
+    expected_feeders = len(feeder_logs)
     feeder_counts = combined.groupby("t_granted")["feeder"].nunique()
-    incomplete_times = feeder_counts[feeder_counts != len(EXPECTED_FEEDERS)]
+    incomplete_times = feeder_counts[feeder_counts != expected_feeders]
     if not incomplete_times.empty:
         preview = ", ".join(f"{t:.3f}s" for t in incomplete_times.index[:5])
         raise RuntimeError(
             "Cannot reconstruct from feeder logs because some times do not have all "
-            f"{len(EXPECTED_FEEDERS)} feeders present. Examples: {preview}"
+            f"{expected_feeders} feeders present. Examples: {preview}"
         )
 
     def _pick_state(series: pd.Series) -> str:
@@ -348,6 +401,26 @@ def load_transmission_plot_data(log_path: Path, bus: int = 2) -> pd.DataFrame:
         ) from feeder_exc
 
 
+def detect_interface_bus(log_path: Path, requested_bus: int | None) -> int:
+    if requested_bus is not None:
+        return requested_bus
+
+    env_value = os.environ.get("TX_INTERFACE_BUS")
+    if env_value is not None:
+        try:
+            return int(env_value)
+        except ValueError:
+            pass
+
+    config_re = re.compile(r"interface_bus=(\d+)")
+    for line in log_path.read_text(errors="ignore").splitlines():
+        match = config_re.search(line)
+        if match:
+            return int(match.group(1))
+
+    return 2
+
+
 def _time_axis_seconds_or_hours(t_seconds: pd.Series):
     if t_seconds.nunique() >= 2 and (t_seconds.max() - t_seconds.min()) >= 3600:
         return t_seconds / 3600.0, "Time (hours)"
@@ -394,6 +467,262 @@ def _apply_zoom_ylim(ax, series_list, pad_ratio: float = 0.1, min_pad: float = 1
     ax.set_ylim(vmin - pad, vmax + pad)
 
 
+def _time_value_in_plot_units(t_seconds: float, xlabel: str) -> float:
+    if "hours" in xlabel.lower():
+        return t_seconds / 3600.0
+    return t_seconds
+
+
+def _extract_disturbance_intervals(df: pd.DataFrame):
+    status_column = None
+    line_idx_column = None
+    if {"t_granted", "postfault_line_status"}.issubset(df.columns):
+        status_column = "postfault_line_status"
+        line_idx_column = "postfault_line_idx"
+    elif {"t_granted", "event_line_status"}.issubset(df.columns):
+        status_column = "event_line_status"
+        line_idx_column = "event_line_idx"
+    else:
+        return None, []
+
+    by_t = (
+        df.dropna(subset=["t_granted", status_column])
+        .sort_values("t_granted")
+        .groupby("t_granted", as_index=False)
+        .last()
+    )
+    if by_t.empty:
+        return None, []
+
+    line_idx = _first_valid_value(by_t, line_idx_column)
+    if pd.isna(line_idx):
+        line_idx = None
+    status_series = pd.to_numeric(by_t[status_column], errors="coerce").ffill()
+    transitions = status_series.ne(status_series.shift())
+
+    intervals = []
+    outage_start = None
+    for row, status_value, changed in zip(
+        by_t.itertuples(index=False), status_series, transitions
+    ):
+        if not changed:
+            continue
+        status_int = int(round(status_value))
+        if status_int == 0 and outage_start is None:
+            outage_start = float(row.t_granted)
+        elif status_int != 0 and outage_start is not None:
+            intervals.append((outage_start, float(row.t_granted)))
+            outage_start = None
+
+    if outage_start is not None:
+        intervals.append((outage_start, float(by_t["t_granted"].iloc[-1])))
+
+    return line_idx, intervals
+
+
+def _extract_fault_intervals(df: pd.DataFrame):
+    if not {"t_granted", "fault_active"}.issubset(df.columns):
+        return None, []
+
+    by_t = (
+        df.dropna(subset=["t_granted", "fault_active"])
+        .sort_values("t_granted")
+        .groupby("t_granted", as_index=False)
+        .last()
+    )
+    if by_t.empty:
+        return None, []
+
+    fault_bus = _first_valid_value(by_t, "fault_bus")
+    if pd.isna(fault_bus):
+        fault_bus = None
+    status_series = pd.to_numeric(by_t["fault_active"], errors="coerce").ffill().fillna(0.0)
+    active_series = status_series >= 0.5
+
+    intervals = []
+    active_start = None
+    for row, active in zip(by_t.itertuples(index=False), active_series):
+        if active and active_start is None:
+            active_start = float(row.t_granted)
+        elif not active and active_start is not None:
+            intervals.append((active_start, float(row.t_granted)))
+            active_start = None
+
+    if active_start is not None:
+        intervals.append((active_start, float(by_t["t_granted"].iloc[-1])))
+
+    return fault_bus, intervals
+
+
+def _add_disturbance_overlays(ax, disturbance_intervals, xlabel: str, line_idx=None):
+    if isinstance(disturbance_intervals, dict):
+        fault_intervals = disturbance_intervals.get("fault_intervals", [])
+        fault_bus = disturbance_intervals.get("fault_bus")
+        for start, end in fault_intervals:
+            x_start = _time_value_in_plot_units(start, xlabel)
+            x_end = _time_value_in_plot_units(end, xlabel)
+            if fault_bus is not None and not pd.isna(fault_bus):
+                label = f"Fault @ bus {int(fault_bus)}"
+            else:
+                label = "Fault"
+            ax.axvspan(x_start, x_end, color="tab:red", alpha=0.12, label=label)
+            fault_bus = None
+        if line_idx is None:
+            line_idx = disturbance_intervals.get("line_idx")
+        disturbance_intervals = disturbance_intervals.get("line_intervals", [])
+    for start, end in disturbance_intervals:
+        x_start = _time_value_in_plot_units(start, xlabel)
+        x_end = _time_value_in_plot_units(end, xlabel)
+        label = None
+        if line_idx:
+            label = f"{line_idx} outage"
+            line_idx = None
+        ax.axvspan(x_start, x_end, color="tab:red", alpha=0.12, label=label)
+
+
+def _load_fidvr_stage_intervals(reference_dir: Path):
+    csv_path = reference_dir / "feeder_1_distribution_voltage.csv"
+    if not csv_path.exists():
+        return []
+
+    df = pd.read_csv(csv_path)
+    if not {"t_granted", "fidvr_stage"}.issubset(df.columns):
+        return []
+
+    by_t = (
+        df.dropna(subset=["t_granted", "fidvr_stage"])
+        .sort_values("t_granted")
+        .groupby("t_granted", as_index=False)
+        .last()
+    )
+    if by_t.empty:
+        return []
+
+    neutral_stages = {"DISABLED", "BASELINE", "RECOVERED"}
+    intervals = []
+    current_stage = by_t["fidvr_stage"].iloc[0]
+    current_start = float(by_t["t_granted"].iloc[0])
+
+    for idx in range(1, len(by_t)):
+        next_stage = by_t["fidvr_stage"].iloc[idx]
+        if next_stage == current_stage:
+            continue
+        if current_stage not in neutral_stages:
+            intervals.append(
+                (current_start, float(by_t["t_granted"].iloc[idx]), current_stage)
+            )
+        current_stage = next_stage
+        current_start = float(by_t["t_granted"].iloc[idx])
+
+    if current_stage not in neutral_stages:
+        intervals.append(
+            (current_start, float(by_t["t_granted"].iloc[-1]), current_stage)
+        )
+
+    return intervals
+
+
+def _add_fidvr_stage_overlays(ax, stage_intervals, xlabel: str):
+    seen = set()
+    for start, end, stage in stage_intervals:
+        x_start = _time_value_in_plot_units(start, xlabel)
+        x_end = _time_value_in_plot_units(end, xlabel)
+        label = None
+        if stage not in seen:
+            label = FIDVR_STAGE_LABELS.get(stage, stage.replace("_", " ").title())
+            seen.add(stage)
+        ax.axvspan(
+            x_start,
+            x_end,
+            color=FIDVR_STAGE_COLORS.get(stage, "#cccccc"),
+            alpha=0.06,
+            label=label,
+        )
+
+
+def _add_alert_threshold_lines(ax, reference_voltage_pu: float):
+    stall_threshold_pu = reference_voltage_pu * DEFAULT_STALL_ALERT_VOLTAGE_PU
+    overvoltage_threshold_pu = reference_voltage_pu * DEFAULT_OVERVOLTAGE_ALERT_PU
+    ax.axhline(
+        stall_threshold_pu,
+        color=ALERT_COLORS["Alert.2"],
+        linewidth=1.0,
+        linestyle=":",
+        label=f"Alert.2 threshold ({stall_threshold_pu:.3f} pu)",
+    )
+    ax.axhline(
+        overvoltage_threshold_pu,
+        color=ALERT_COLORS["Alert.3"],
+        linewidth=1.0,
+        linestyle=":",
+        label=f"Alert.3 threshold ({overvoltage_threshold_pu:.3f} pu)",
+    )
+
+
+def _add_alert_overlays(ax, alerts: pd.DataFrame, xlabel: str):
+    seen = set()
+    for row in alerts.itertuples(index=False):
+        if not bool(row.triggered):
+            continue
+        x_pos = _time_value_in_plot_units(float(row.trigger_time_s), xlabel)
+        label = row.alert_id if row.alert_id not in seen else None
+        seen.add(row.alert_id)
+        ax.axvline(
+            x_pos,
+            color=ALERT_COLORS.get(row.alert_id, "black"),
+            linewidth=1.3,
+            linestyle="--",
+            alpha=0.9,
+            label=label,
+        )
+        ax.text(
+            x_pos,
+            ALERT_TEXT_Y.get(row.alert_id, 0.06),
+            row.alert_id,
+            transform=ax.get_xaxis_transform(),
+            rotation=90,
+            ha="right",
+            va="bottom",
+            fontsize=8.5,
+            color=ALERT_COLORS.get(row.alert_id, "black"),
+        )
+
+
+def _add_alert_window_overlay(ax, alerts: pd.DataFrame, xlabel: str):
+    stall_rows = alerts.loc[alerts["alert_id"] == "Alert.2"]
+    if stall_rows.empty or not bool(stall_rows.iloc[0]["triggered"]):
+        return
+
+    stall_row = stall_rows.iloc[0]
+    window_start = _time_value_in_plot_units(float(stall_row["trigger_time_s"]), xlabel)
+    window_end = _time_value_in_plot_units(
+        float(stall_row["trigger_time_s"]) + DEFAULT_OVERVOLTAGE_LOOKAHEAD_S,
+        xlabel,
+    )
+    ax.axvspan(
+        window_start,
+        window_end,
+        color=ALERT_COLORS["Alert.3"],
+        alpha=0.04,
+        label="Alert.3 lookahead",
+    )
+
+    overvoltage_rows = alerts.loc[alerts["alert_id"] == "Alert.3"]
+    if overvoltage_rows.empty or not bool(overvoltage_rows.iloc[0]["triggered"]):
+        return
+
+    overvoltage_row = overvoltage_rows.iloc[0]
+    trigger_start = _time_value_in_plot_units(float(overvoltage_row["start_time_s"]), xlabel)
+    trigger_end = _time_value_in_plot_units(float(overvoltage_row["end_time_s"]), xlabel)
+    ax.axvspan(
+        trigger_start,
+        trigger_end,
+        color=ALERT_COLORS["Alert.3"],
+        alpha=0.12,
+        label="Alert.3 active",
+    )
+
+
 def _format_genrou_identity(row: pd.Series, idx_col: str, bus_col: str) -> str:
     idx = row.get(idx_col)
     bus = row.get(bus_col)
@@ -419,6 +748,38 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
 
     x, xlabel = _time_axis_seconds_or_hours(by_t["t_granted"])
     extra_pngs = []
+    disturbance_line_idx, line_outage_intervals = _extract_disturbance_intervals(by_t)
+    fault_bus, fault_intervals = _extract_fault_intervals(by_t)
+    disturbance_intervals = {
+        "line_idx": disturbance_line_idx,
+        "line_intervals": line_outage_intervals,
+        "fault_bus": fault_bus,
+        "fault_intervals": fault_intervals,
+    }
+    fidvr_stage_intervals = _load_fidvr_stage_intervals(out_dir)
+    alert_signal = by_t["Vmag"].ffill().bfill()
+    reference_voltage_pu = float(alert_signal.dropna().iloc[0])
+    alerts = detect_fidvr_alerts(
+        by_t["t_granted"],
+        alert_signal,
+        reference_voltage_pu=reference_voltage_pu,
+    )
+    if fault_intervals:
+        intervals_str = ", ".join(
+            f"[{start:.3f}, {end:.3f}] s" for start, end in fault_intervals
+        )
+        print(
+            f"[INFO] Fault intervals for bus {fault_bus if fault_bus is not None else 'n/a'}: "
+            f"{intervals_str}"
+        )
+    if line_outage_intervals:
+        intervals_str = ", ".join(
+            f"[{start:.3f}, {end:.3f}] s" for start, end in line_outage_intervals
+        )
+        print(
+            f"[INFO] Post-fault line intervals for {disturbance_line_idx or 'monitored line'}: "
+            f"{intervals_str}"
+        )
 
     d_pq = by_t.dropna(subset=["P_total", "Q_total"])
     plt.figure()
@@ -426,6 +787,13 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         x_pq, _ = _time_axis_seconds_or_hours(d_pq["t_granted"])
         plt.plot(x_pq, d_pq["P_total"], label="P_total (pu)")
         plt.plot(x_pq, d_pq["Q_total"], label="Q_total (pu)")
+        _add_fidvr_stage_overlays(plt.gca(), fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(
+            plt.gca(),
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         plt.legend()
         _apply_zoom_ylim(plt.gca(), [d_pq["P_total"], d_pq["Q_total"]], min_pad=1e-5)
     plt.xlabel(xlabel)
@@ -440,6 +808,11 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
     if len(d_v):
         x_v, _ = _time_axis_seconds_or_hours(d_v["t_granted"])
         plt.plot(x_v, d_v["Vmag"])
+        _add_alert_threshold_lines(plt.gca(), reference_voltage_pu)
+        _add_alert_window_overlay(plt.gca(), alerts, xlabel)
+        _add_alert_overlays(plt.gca(), alerts, xlabel)
+        _add_fidvr_stage_overlays(plt.gca(), fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(plt.gca(), disturbance_intervals, xlabel)
         _apply_zoom_ylim(plt.gca(), [d_v["Vmag"]], min_pad=5e-4)
     plt.xlabel(xlabel)
     plt.ylabel(f"Bus {bus} Voltage Magnitude |V| (pu)")
@@ -453,6 +826,8 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         plt.figure()
         x_ang, _ = _time_axis_seconds_or_hours(d_ang["t_granted"])
         plt.plot(x_ang, d_ang["Vang_rad"] * 180.0 / math.pi)
+        _add_fidvr_stage_overlays(plt.gca(), fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(plt.gca(), disturbance_intervals, xlabel)
         plt.xlabel(xlabel)
         plt.ylabel(f"Bus {bus} Voltage Angle (deg)")
         plt.title(f"Bus {bus} Voltage Angle vs Time")
@@ -467,6 +842,13 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         x_pq, _ = _time_axis_seconds_or_hours(d_pq["t_granted"])
         ax[0].plot(x_pq, d_pq["P_total"], label="P_total (pu)")
         ax[0].plot(x_pq, d_pq["Q_total"], label="Q_total (pu)")
+        _add_fidvr_stage_overlays(ax[0], fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(
+            ax[0],
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         _apply_zoom_ylim(ax[0], [d_pq["P_total"], d_pq["Q_total"]], min_pad=1e-5)
         ax[0].set_ylabel("Total Load (pu)")
         ax[0].legend()
@@ -476,6 +858,11 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
     if len(d_v):
         x_v, _ = _time_axis_seconds_or_hours(d_v["t_granted"])
         ax[1].plot(x_v, d_v["Vmag"], label=f"Bus {bus} |V|")
+        _add_alert_threshold_lines(ax[1], reference_voltage_pu)
+        _add_alert_window_overlay(ax[1], alerts, xlabel)
+        _add_alert_overlays(ax[1], alerts, xlabel)
+        _add_fidvr_stage_overlays(ax[1], fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(ax[1], disturbance_intervals, xlabel)
         ax[1].set_ylabel(f"Bus {bus} |V| (pu)")
         _apply_zoom_ylim(ax[1], [d_v["Vmag"]], min_pad=5e-4)
         ax[1].set_title(f"Transmission bus {bus} voltage")
@@ -491,7 +878,15 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
     fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8.5, 6.5))
     if len(d_pq):
         x_pq, _ = _time_axis_seconds_or_hours(d_pq["t_granted"])
+        ax[0].plot(x_pq, d_pq["P_total"], label="P_total (pu)")
         ax[0].plot(x_pq, d_pq["Q_total"], label="Q_total (pu)")
+        _add_fidvr_stage_overlays(ax[0], fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(
+            ax[0],
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         ax[0].set_ylabel("Total Load (pu)")
         ax[0].legend()
     ax[0].set_title("Total Load and Iteration vs Time")
@@ -499,6 +894,8 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
     if len(by_t):
         x_iter, _ = _time_axis_seconds_or_hours(by_t["t_granted"])
         ax[1].plot(x_iter, by_t["iter"])
+        _add_fidvr_stage_overlays(ax[1], fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(ax[1], disturbance_intervals, xlabel)
         ax[1].set_ylabel("Iteration at each time step")
     ax[1].set_xlabel(xlabel)
 
@@ -525,6 +922,13 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         x_event_v, _ = _time_axis_seconds_or_hours(d_event_v["t_granted"])
         plt.plot(x_event_v, d_event_v["event_bus1_vmag"], label=f"Bus {event_bus1} |V|")
         plt.plot(x_event_v, d_event_v["event_bus2_vmag"], label=f"Bus {event_bus2} |V|")
+        _add_fidvr_stage_overlays(plt.gca(), fidvr_stage_intervals, xlabel)
+        _add_disturbance_overlays(
+            plt.gca(),
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         if "Vmag" in d_event_v.columns:
             plt.plot(
                 x_event_v,
@@ -550,7 +954,8 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
             )
         plt.xlabel(xlabel)
         plt.ylabel("Voltage Magnitude |V| (pu)")
-        plt.title(f"Voltages Near Tripped Line {event_line_idx}")
+        title_prefix = "Disturbed" if disturbance_intervals else "Monitored"
+        plt.title(f"Voltages Near {title_prefix} Line {event_line_idx}")
         plt.legend()
         plt.tight_layout()
         event_v_png = out_dir / "event_line_endpoint_voltages_vs_time.png"
@@ -581,6 +986,12 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
 
         ax[0].plot(x_event_ang, bus1_ang_deg, label=f"Bus {event_bus1} angle")
         ax[0].plot(x_event_ang, bus2_ang_deg, label=f"Bus {event_bus2} angle")
+        _add_disturbance_overlays(
+            ax[0],
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         if "Vang_rad" in d_event_ang.columns:
             ax[0].plot(
                 x_event_ang,
@@ -591,7 +1002,8 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
             )
         _apply_zoom_ylim(ax[0], [bus1_ang_deg, bus2_ang_deg], min_pad=0.05)
         ax[0].set_ylabel("Angle (deg)")
-        ax[0].set_title(f"Angles Near Tripped Line {event_line_idx}")
+        title_prefix = "Disturbed" if disturbance_intervals else "Monitored"
+        ax[0].set_title(f"Angles Near {title_prefix} Line {event_line_idx}")
         ax[0].legend()
         ax[0].grid(True)
 
@@ -600,6 +1012,7 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
             d_event_ang["event_bus_angle_diff_deg"],
             label=f"{event_bus1}-{event_bus2} angle diff",
         )
+        _add_disturbance_overlays(ax[1], disturbance_intervals, xlabel)
         _apply_zoom_ylim(ax[1], [d_event_ang["event_bus_angle_diff_deg"]], min_pad=0.05)
         ax[1].set_ylabel("Angle diff (deg)")
         ax[1].set_xlabel(xlabel)
@@ -620,12 +1033,19 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         x_delta, _ = _time_axis_seconds_or_hours(d_delta["t_granted"])
         ax[0].plot(x_delta, d_delta["delta_min_deg"], label="delta_min (deg)")
         ax[0].plot(x_delta, d_delta["delta_max_deg"], label="delta_max (deg)")
+        _add_disturbance_overlays(
+            ax[0],
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         ax[0].set_ylabel("Rotor angle (deg)")
         ax[0].set_title("GENROU rotor angle envelope")
         ax[0].legend()
         ax[0].grid(True)
 
         ax[1].plot(x_delta, d_delta["delta_spread_deg"], label="delta_spread (deg)")
+        _add_disturbance_overlays(ax[1], disturbance_intervals, xlabel)
         ax[1].set_ylabel("Spread (deg)")
         ax[1].set_xlabel(xlabel)
         ax[1].legend()
@@ -645,6 +1065,12 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         x_omega, _ = _time_axis_seconds_or_hours(d_omega["t_granted"])
         ax[0].plot(x_omega, d_omega["omega_min_pu"], label="omega_min (pu)")
         ax[0].plot(x_omega, d_omega["omega_max_pu"], label="omega_max (pu)")
+        _add_disturbance_overlays(
+            ax[0],
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         ax[0].axhline(1.0, color="k", linestyle="--", linewidth=1.0, label="sync speed")
         ax[0].set_ylabel("Speed (pu)")
         ax[0].set_title("GENROU speed envelope")
@@ -652,6 +1078,7 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         ax[0].grid(True)
 
         ax[1].plot(x_omega, d_omega["omega_max_dev"], label="max |omega-1|")
+        _add_disturbance_overlays(ax[1], disturbance_intervals, xlabel)
         ax[1].set_ylabel("Speed deviation (pu)")
         ax[1].set_xlabel(xlabel)
         ax[1].legend()
@@ -669,6 +1096,12 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         x_vf, _ = _time_axis_seconds_or_hours(d_vf["t_granted"])
         plt.plot(x_vf, d_vf["vf_min_pu"], label="vf_min (pu)")
         plt.plot(x_vf, d_vf["vf_max_pu"], label="vf_max (pu)")
+        _add_disturbance_overlays(
+            plt.gca(),
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         plt.xlabel(xlabel)
         plt.ylabel("Field voltage (pu)")
         plt.title("GENROU field voltage envelope vs Time")
@@ -695,6 +1128,12 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         plt.step(x_critical, d_critical_bus["delta_max_bus"], where="post", label="delta_max bus")
         plt.step(x_critical, d_critical_bus["omega_max_bus"], where="post", label="omega_max bus")
         plt.step(x_critical, d_critical_bus["vf_max_bus"], where="post", label="vf_max bus")
+        _add_disturbance_overlays(
+            plt.gca(),
+            disturbance_intervals,
+            xlabel,
+            line_idx=disturbance_line_idx,
+        )
         _apply_zoom_ylim(
             plt.gca(),
             [
@@ -784,8 +1223,13 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
                 f"and {_format_genrou_identity(peak_delta_row, 'delta_max_idx', 'delta_max_bus')}"
             )
 
+    alert_csv_path = out_dir / f"bus{bus}_fidvr_alerts.csv"
+    alerts.to_csv(alert_csv_path, index=False)
     csv_path = out_dir / "parsed_transmission.csv"
     df.to_csv(csv_path, index=False)
+    for line in alert_summary_lines(alerts, f"Bus {bus} |V|"):
+        print(f"[INFO] {line}")
+    print(f"[OK] Saved CSV: {alert_csv_path}")
     print(f"[OK] Saved CSV: {csv_path}")
     print(f"[OK] Saved PNGs to: {out_dir}")
     print("     - total_pq_vs_time.png")
@@ -800,7 +1244,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--log", type=str, default="transmission.log", help="Path to transmission.log")
     parser.add_argument("--out", type=str, default=None, help="Output folder (default: same folder as log)")
-    parser.add_argument("--bus", type=int, default=2, help="Bus index for |V| (default: 2)")
+    parser.add_argument("--bus", type=int, default=None, help="Bus index for |V| (default: detect interface bus)")
     args = parser.parse_args()
 
     log_path = Path(args.log).expanduser().resolve()
@@ -808,13 +1252,14 @@ def main():
         raise FileNotFoundError(f"Log not found: {log_path}")
 
     out_dir = Path(args.out).expanduser().resolve() if args.out else log_path.parent
+    bus = detect_interface_bus(log_path, args.bus)
 
     print(f"[INFO] Log: {log_path}")
     print(f"[INFO] Out: {out_dir}")
-    print(f"[INFO] Bus: {args.bus}")
+    print(f"[INFO] Bus: {bus}")
 
-    df = load_transmission_plot_data(log_path, bus=args.bus)
-    make_plots(df, out_dir, bus=args.bus)
+    df = load_transmission_plot_data(log_path, bus=bus)
+    make_plots(df, out_dir, bus=bus)
 
 
 if __name__ == "__main__":

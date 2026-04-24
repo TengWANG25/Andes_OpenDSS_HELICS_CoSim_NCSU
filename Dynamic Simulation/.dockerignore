@@ -1,0 +1,11 @@
+.git
+.venv
+*.log
+*.Zone.Identifier
+__pycache__/
+*.pyc
+*.png
+*.csv
+*.dbl
+*.DSV
+*.Txt
