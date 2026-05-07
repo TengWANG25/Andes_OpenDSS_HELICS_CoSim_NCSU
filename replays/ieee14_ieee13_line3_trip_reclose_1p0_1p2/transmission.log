@@ -1,0 +1,37 @@
+Transmission: HELICS interfaces created.
+Transmission config: case=/home/teng/benchmark_118_10_8500_Andes_OpenDSS/ieee14_fault.xlsx interface_bus=2 feeders=1 interface_base=100.000 MVA broker=tcp://127.0.0.1:23671 voltage_topic=TxInterfaceVoltage uninterruptible=False
+Transmission base alignment: interface_base=100.000 MVA, andes_base=100.000 MVA, interface_to_system_scale=1.000000
+Transmission embedded workbook events: disabled
+Transmission disturbance: line trip/reclose on Line_3 from t=1.000s to t=1.200s
+Transmission post-fault monitored line: Line_3 (2-3)
+Transmission primary disturbance: line trip/reclose on Line_3 from t=1.000s to t=1.200s
+Transmission: co-simulation step schedule = 0.005s until t=1.580s, then 0.020s
+Transmission: entered HELICS initialization mode.
+[TX init 01] updated=1/1 P=0.036027 Q=0.016982 (interface=0.036027+j0.016982 pu) |V|=1.030000 ang=-0.032662 dV=1.930e-03 dS=inf
+[TX init 02] updated=1/1 P=0.036027 Q=0.016982 (interface=0.036027+j0.016982 pu) |V|=1.030000 ang=-0.032662 dV=1.264e-08 dS=3.013e-07
+[TX init 03] updated=1/1 P=0.036027 Q=0.016982 (interface=0.036027+j0.016982 pu) |V|=1.030000 ang=-0.032662 dV=7.372e-09 dS=1.685e-07
+[TX init 04] updated=0/1 P=0.036027 Q=0.016982 (interface=0.036027+j0.016982 pu) |V|=1.030000 ang=-0.032662 dV=0.000e+00 dS=0.000e+00
+Transmission: initialization handshake converged.
+/home/teng/miniforge3/envs/cosim/lib/python3.12/site-packages/andes/routines/tds.py:370: RuntimeWarning: invalid value encountered in scalar divide
+  perc = round((dae.t - config.t0) / (config.tf - config.t0) * 100, 2)
+Interface bus 2 initial voltage: 1.029451-0.033636j
+Interface bus 2 initial voltage mag: 1.030000
+Interface bus 2 initial voltage angle: -0.032662
+DistLoad p0=0.036027, q0=0.016982
+Transmission: target simulation time = 4.000 s
+[TX progress] t=0.500s/4.000s state=NEXT_STEP updated=0/1 P=0.036027 Q=0.016982 (interface=0.036027+j0.016982 pu) |V|=1.030000 ang=-0.032662 dt=0.005s
+<Toggle Trip_Line_3>: Line.Line_3 status changed to 0 at t=1.0 sec.
+[TX progress] t=1.000s/4.000s state=NEXT_STEP updated=0/1 P=0.036027 Q=0.016982 (interface=0.036027+j0.016982 pu) |V|=1.030000 ang=-0.032662 dt=0.005s
+<Toggle Reclose_Line_3>: Line.Line_3 status changed to 1 at t=1.2 sec.
+[TX progress] t=1.500s/4.000s state=NEXT_STEP updated=1/1 P=0.036050 Q=0.016969 (interface=0.036050+j0.016969 pu) |V|=1.031396 ang=-0.034269 dt=0.005s
+[TX progress] t=2.005s/4.000s state=NEXT_STEP updated=0/1 P=0.036035 Q=0.016977 (interface=0.036035+j0.016977 pu) |V|=1.030444 ang=-0.036090 dt=0.020s
+[TX progress] t=2.505s/4.000s state=NEXT_STEP updated=0/1 P=0.036031 Q=0.016980 (interface=0.036031+j0.016980 pu) |V|=1.030231 ang=-0.037174 dt=0.020s
+[TX progress] t=3.005s/4.000s state=NEXT_STEP updated=0/1 P=0.036028 Q=0.016981 (interface=0.036028+j0.016981 pu) |V|=1.030070 ang=-0.037225 dt=0.020s
+[TX progress] t=3.505s/4.000s state=NEXT_STEP updated=0/1 P=0.036028 Q=0.016981 (interface=0.036028+j0.016981 pu) |V|=1.030036 ang=-0.036933 dt=0.020s
+[TX progress] t=4.000s/4.000s state=NEXT_STEP updated=0/1 P=0.036028 Q=0.016982 (interface=0.036028+j0.016982 pu) |V|=1.030030 ang=-0.036525 dt=0.020s
+Transmission: saved timeseries CSV to /home/teng/benchmark_118_10_8500_Andes_OpenDSS/transmission_timeseries.csv
+Transmission: saved alert CSV to /home/teng/benchmark_118_10_8500_Andes_OpenDSS/bus2_fidvr_alerts.csv
+[TX ALERT SUMMARY] Bus 2 |V| Alert.1 Fault Alert: not triggered.
+[TX ALERT SUMMARY] Bus 2 |V| Alert.2 Air Conditioner Stall Alert: not triggered.
+[TX ALERT SUMMARY] Bus 2 |V| Alert.3 Overvoltage Alert: not triggered.
+Transmission: Finished.

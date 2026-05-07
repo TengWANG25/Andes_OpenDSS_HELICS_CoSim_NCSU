@@ -1,14 +1,3 @@
-# Simulation outputs and runtime logs
-*.log
-*.npz
-*.sif
-*.out
-*.lst
-__pycache__/
-
-# Windows/WSL metadata files
-*:Zone.Identifier
-
 # Local agent/editor/tooling files
 .adal/
 .agents/

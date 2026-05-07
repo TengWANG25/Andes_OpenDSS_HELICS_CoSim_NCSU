@@ -1,0 +1,2 @@
+Broker: starting with federates=2 port=23406
+[2026-05-01 16:06:58.630] [console] [warning] commWarning||mainbroker (1)[operating]::unknown route and no broker, dropping message pub:From (131073) handle(0) size 24 at 120 to 131072
