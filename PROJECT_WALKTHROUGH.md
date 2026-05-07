@@ -2,7 +2,7 @@
 
 ## Goal
 
-This project studies fault sinduced delayed voltage recovery (FIDVR) in a
+This project studies fault induced delayed voltage recovery (FIDVR) in a
 transmission-distribution co-simulation. ANDES solves the transmission-side
 dynamic system, OpenDSS provides the IEEE 13-node distribution feeder, and HELICS
 exchanges the interface voltage and feeder power at each co-simulation time step.
