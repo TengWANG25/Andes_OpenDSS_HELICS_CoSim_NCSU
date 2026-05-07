@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""OpenDSS feeder federate for the ANDES-OpenDSS-HELICS FIDVR study.
+
+The feeder receives the transmission interface voltage from HELICS, updates the
+WECC Motor D state, solves an OpenDSS snapshot, and publishes the
+resulting feeder complex power back to the transmission federate.
+"""
+
+# Import libraries 
 import math
 import os
 import sys
@@ -8,7 +16,18 @@ from pathlib import Path
 import helics as h
 import opendssdirect as dss
 
+from fidvr_controls import (
+    DelayedShuntControlConfig,
+    DelayedShuntControlState,
+    shunt_status_from_fraction,
+    update_delayed_shunt_control,
+)
 from fidvr_alerts import FidvrAlertDetector, alert_summary_lines
+from fidvr_load_restoration import (
+    ThermalLoadRestorationConfig,
+    ThermalLoadRestorationState,
+    update_thermal_load_restoration,
+)
 
 
 ITER_STATE_NAME = {
@@ -18,6 +37,9 @@ ITER_STATE_NAME = {
     h.HELICS_ITERATION_RESULT_HALTED: "HALTED",
 }
 
+# =============================================================================
+# Data Models
+# =============================================================================
 
 @dataclass(frozen=True)
 class LoadSpec:
@@ -47,6 +69,8 @@ class CapacitorSpec:
     bus: str
     phases: int
     kv: float
+    base_kvar: float
+    applied_kvar: float
 
 
 @dataclass(frozen=True)
@@ -59,10 +83,10 @@ class DisturbanceConfig:
 
 @dataclass(frozen=True)
 class MotorElementSpec:
+    """OpenDSS load element used as one WECC Motor D terminal injection."""
+
     element_name: str
-    companion_load_name: str
     source_load_name: str
-    dynamic_element: bool
     group_index: int
     phase: int
     phases: int
@@ -74,30 +98,44 @@ class MotorElementSpec:
     bus: str
     kv: float
     conn: str
-    trip_offset_s: float
-    restore_offset_s: float
 
 
 @dataclass
 class FeederRuntimeState:
-    dynamics_enabled: bool = False
-    dynamic_time: float = 0.0
+    """Mutable state that must persist across HELICS granted times."""
+
     motor_elements: tuple[MotorElementSpec, ...] = ()
     motor_group_states: dict[str, str] = field(default_factory=dict)
     motor_group_p_scales: dict[str, float] = field(default_factory=dict)
     motor_group_q_scales: dict[str, float] = field(default_factory=dict)
     motor_stall_armed_since: dict[str, float | None] = field(default_factory=dict)
     motor_thermal_state: dict[str, float] = field(default_factory=dict)
-    motor_trip_until: dict[str, float] = field(default_factory=dict)
+    motor_trip_reason: dict[str, str] = field(default_factory=dict)
     motor_reconnect_armed_since: dict[str, float | None] = field(default_factory=dict)
-    motor_restore_started_at: dict[str, float | None] = field(default_factory=dict)
     motor_restore_frac: dict[str, float] = field(default_factory=dict)
+    motor_contactor_fraction: dict[str, float] = field(default_factory=dict)
+    motor_uv_trip_fraction: dict[str, float] = field(default_factory=dict)
+    motor_uv1_armed_since: dict[str, float | None] = field(default_factory=dict)
+    motor_uv2_armed_since: dict[str, float | None] = field(default_factory=dict)
+    motor_thermal_state_a: dict[str, float] = field(default_factory=dict)
+    motor_thermal_state_b: dict[str, float] = field(default_factory=dict)
+    motor_wecc_a_stalled: dict[str, bool] = field(default_factory=dict)
+    motor_wecc_b_stalled: dict[str, bool] = field(default_factory=dict)
+    motor_wecc_b_restarted: dict[str, bool] = field(default_factory=dict)
+    motor_thermal_restore_trip_time: dict[str, float | None] = field(default_factory=dict)
+    motor_thermal_restore_started_at: dict[str, float | None] = field(default_factory=dict)
+    motor_thermal_restore_frac: dict[str, float] = field(default_factory=dict)
+    motor_thermal_restore_target: dict[str, float] = field(default_factory=dict)
+    motor_thermal_restore_delay_s: dict[str, float] = field(default_factory=dict)
     regulator_low_armed_since: dict[str, float | None] = field(default_factory=dict)
     regulator_high_armed_since: dict[str, float | None] = field(default_factory=dict)
     regulator_last_action_time: dict[str, float] = field(default_factory=dict)
     capacitor_on_armed_since: dict[str, float | None] = field(default_factory=dict)
     capacitor_off_armed_since: dict[str, float | None] = field(default_factory=dict)
     capacitor_states: dict[str, bool] = field(default_factory=dict)
+    capacitor_locked_out: dict[str, bool] = field(default_factory=dict)
+    capacitor_last_action: dict[str, str] = field(default_factory=dict)
+    capacitor_monitored_voltage: dict[str, float] = field(default_factory=dict)
     last_control_time: float = 0.0
     last_stage_info: dict = field(default_factory=dict)
 
@@ -105,31 +143,38 @@ class FeederRuntimeState:
 @dataclass(frozen=True)
 class FidvrConfig:
     enabled: bool
-    motor_model: str
     motor_loads: tuple[str, ...]
     capacitor_names: tuple[str, ...]
     regulator_names: tuple[str, ...]
     motor_share: float
-    stall_kvar_per_kw: float
-    tripped_motor_p_scale: float
-    tripped_motor_q_scale: float
-    motor_kva_factor: float
-    motor_group_trip_offsets: tuple[float, ...]
-    motor_group_restore_offsets: tuple[float, ...]
-    static_kvar_per_motor_kw: float
-    motor_stall_voltage_pu: float
-    motor_stall_clear_voltage_pu: float
-    motor_stall_delay_s: float
-    motor_stall_kw_scale: float
-    motor_stall_kvar_scale: float
-    motor_thermal_trip_level: float
-    motor_thermal_reset_level: float
-    motor_thermal_trip_time_s: float
-    motor_thermal_trip_spread_s: float
-    motor_cool_time_s: float
-    motor_reconnect_delay_s: float
-    motor_reconnect_ramp_s: float
-    motor_reconnect_voltage_pu: float
+    wecc_comp_pf: float
+    wecc_vstall: float
+    wecc_rstall: float
+    wecc_xstall: float
+    wecc_tstall: float
+    wecc_frst: float
+    wecc_vrst: float
+    wecc_trst: float
+    wecc_vbrk: float
+    wecc_vc1off: float
+    wecc_vc2off: float
+    wecc_vc1on: float
+    wecc_vc2on: float
+    wecc_tth: float
+    wecc_th1t: float
+    wecc_th2t: float
+    wecc_fuvr: float
+    wecc_uvtr1: float
+    wecc_ttr1: float
+    wecc_uvtr2: float
+    wecc_ttr2: float
+    enable_thermal_load_restoration: bool
+    thermal_restore_min_delay_s: float
+    thermal_restore_max_delay_s: float
+    thermal_restore_ramp_s: float
+    thermal_restore_voltage_pu: float
+    thermal_restore_dropout_voltage_pu: float
+    thermal_restore_fraction: float
     regulator_low_voltage_pu: float
     regulator_high_voltage_pu: float
     regulator_monitor_bus: str
@@ -140,15 +185,21 @@ class FidvrConfig:
     capacitor_on_delay_s: float
     capacitor_off_delay_s: float
     initial_capacitor_fraction: float
-    dynamic_step: float
+    capacitor_lockout_after_open: bool
+    capacitor_kvar_scale: float
     enable_reg_control: bool
     enable_cap_control: bool
     alert_signal: str
     alert_bus: str
+    prefault_min_voltage_pu: float
 
 
 feeder_index = int(sys.argv[1]) if len(sys.argv) > 1 else 1
 
+
+# =============================================================================
+# Environment Configuration
+# =============================================================================
 
 def get_target_time() -> float:
     value = os.environ.get("SIM_TARGET_TIME", "10.0")
@@ -232,36 +283,6 @@ def get_env_name_list(name: str, default: str) -> tuple[str, ...]:
     return tuple(names)
 
 
-def get_env_float_list(name: str, default: str) -> tuple[float, ...]:
-    raw = os.environ.get(name, default)
-    values = []
-    for entry in raw.split(","):
-        item = entry.strip()
-        if not item:
-            continue
-        try:
-            values.append(float(item))
-        except ValueError as exc:
-            raise ValueError(
-                f"Invalid {name}='{raw}'. Expected a comma-separated list of floats."
-            ) from exc
-    if not values:
-        raise ValueError(
-            f"Invalid {name}='{raw}'. Expected a comma-separated list of floats."
-        )
-    return tuple(values)
-
-
-def _expand_sequence(values: tuple, count: int, name: str) -> tuple:
-    if len(values) == count:
-        return values
-    if len(values) == 1:
-        return values * count
-    raise ValueError(
-        f"Invalid {name}: expected 1 or {count} entries, got {len(values)}."
-    )
-
-
 def get_cosim_step_config(disturbance: DisturbanceConfig):
     fine_dt = get_positive_env_float("SIM_FINE_DT", 0.005)
     coarse_dt = get_positive_env_float("SIM_COARSE_DT", 0.02)
@@ -327,89 +348,80 @@ def get_disturbance_config() -> DisturbanceConfig:
     )
 
 
-def get_fidvr_config(fine_dt: float) -> FidvrConfig:
-    """Configure FIDVR motor model optimized for fault-based validation.
-    
-    Key tuning for fault scenario:
-    - Stall voltage: 0.70-0.75 (captures deep sag from fault)
-    - Stall kvar scale: 6.0-8.0 (reactive power surge during stall)
-    - Motor reconnect delay: 8-12s (multi-second delayed recovery)
-    - Thermal trip time: 15-20s (holds stalled state)
-    """
-    requested_motor_model = get_env_choice(
-        "FIDVR_MOTOR_MODEL", "surrogate", {"actual", "surrogate", "indmach"}
-    )
-    if requested_motor_model == "actual":
-        print(
-            "Feeder FIDVR config: FIDVR_MOTOR_MODEL=actual is deprecated in this "
-            "repository; using the surrogate staged-load backend."
+def get_fidvr_config() -> FidvrConfig:
+    """Configure the WECC Motor D FIDVR experiment."""
+    unsupported_motor_model = os.environ.get("FIDVR_MOTOR_MODEL", "").strip()
+    if unsupported_motor_model and unsupported_motor_model not in {"wecc", "wecc_motor_d"}:
+        raise ValueError(
+            "FIDVR_MOTOR_MODEL is now WECC-only. Remove the override or use "
+            "FIDVR_MOTOR_MODEL=wecc_motor_d."
         )
-        motor_model = "surrogate"
-    else:
-        motor_model = requested_motor_model
 
-    motor_share_default = 0.45 if motor_model == "surrogate" else 0.35
-    motor_group_trip_offsets = get_env_float_list(
-        "FIDVR_MOTOR_GROUP_TRIP_OFFSETS", "0,0,0"
+    thermal_restore_min_delay_s = get_nonnegative_env_float(
+        "FIDVR_THERMAL_RESTORE_MIN_DELAY_S", 180.0
     )
-    motor_group_restore_offsets = get_env_float_list(
-        "FIDVR_MOTOR_GROUP_RESTORE_OFFSETS", "0,0,0"
+    thermal_restore_max_delay_s = get_nonnegative_env_float(
+        "FIDVR_THERMAL_RESTORE_MAX_DELAY_S", 300.0
     )
+    if thermal_restore_max_delay_s < thermal_restore_min_delay_s:
+        raise ValueError(
+            "Invalid FIDVR thermal restoration delay window: "
+            "FIDVR_THERMAL_RESTORE_MAX_DELAY_S must be >= "
+            "FIDVR_THERMAL_RESTORE_MIN_DELAY_S."
+        )
+
     return FidvrConfig(
         enabled=get_env_bool("FIDVR_ENABLE", False),
-        motor_model=motor_model,
         motor_loads=get_env_name_list(
             "FIDVR_MOTOR_LOADS",
             "634a,634b,634c,645,675a,675b,675c,611,652,670a,670b,670c",
         ),
         capacitor_names=get_env_name_list("FIDVR_CAPACITORS", "cap1,cap2"),
         regulator_names=get_env_name_list("FIDVR_REGULATORS", "reg1,reg2,reg3"),
-        motor_share=get_fraction_env_float("FIDVR_MOTOR_SHARE", motor_share_default),
-        stall_kvar_per_kw=get_positive_env_float("FIDVR_STALL_KVAR_PER_KW", 2.0),
-        tripped_motor_p_scale=get_nonnegative_env_float(
-            "FIDVR_TRIPPED_MOTOR_P_SCALE", 0.02
+        motor_share=get_fraction_env_float("FIDVR_MOTOR_SHARE", 0.35),
+        # WECC report map:
+        # - Main LD1PAC parameter tables: pp. 66 and 75.
+        # - Stall timing tests: pp. 18 and 21.
+        # - Contactor, restart, UVR, and thermal tests: pp. 25-41.
+        # - Current R/X defaults follow Section 9, p. 58; Appendix 1/3 list
+        #   the opposite order. See WECC_MOTOR_D_TRACEABILITY.md.
+        wecc_comp_pf=get_positive_env_float("FIDVR_WECC_COMPPF", 0.97),
+        wecc_vstall=get_positive_env_float("FIDVR_WECC_VSTALL", 0.70),
+        wecc_rstall=get_positive_env_float("FIDVR_WECC_RSTALL", 0.114),
+        wecc_xstall=get_positive_env_float("FIDVR_WECC_XSTALL", 0.124),
+        wecc_tstall=get_positive_env_float("FIDVR_WECC_TSTALL", 0.033),
+        wecc_frst=get_fraction_env_float("FIDVR_WECC_FRST", 0.20),
+        wecc_vrst=get_positive_env_float("FIDVR_WECC_VRST", 0.90),
+        wecc_trst=get_nonnegative_env_float("FIDVR_WECC_TRST", 0.40),
+        wecc_vbrk=get_positive_env_float("FIDVR_WECC_VBRK", 0.86),
+        wecc_vc1off=get_positive_env_float("FIDVR_WECC_VC1OFF", 0.45),
+        wecc_vc2off=get_positive_env_float("FIDVR_WECC_VC2OFF", 0.35),
+        wecc_vc1on=get_positive_env_float("FIDVR_WECC_VC1ON", 0.50),
+        wecc_vc2on=get_positive_env_float("FIDVR_WECC_VC2ON", 0.40),
+        wecc_tth=get_positive_env_float("FIDVR_WECC_TTH", 10.0),
+        wecc_th1t=get_positive_env_float("FIDVR_WECC_TH1T", 1.30),
+        wecc_th2t=get_positive_env_float("FIDVR_WECC_TH2T", 4.30),
+        wecc_fuvr=get_fraction_env_float("FIDVR_WECC_FUVR", 0.0),
+        wecc_uvtr1=get_positive_env_float("FIDVR_WECC_UVTR1", 0.80),
+        wecc_ttr1=get_nonnegative_env_float("FIDVR_WECC_TTR1", 0.20),
+        wecc_uvtr2=get_positive_env_float("FIDVR_WECC_UVTR2", 0.90),
+        wecc_ttr2=get_nonnegative_env_float("FIDVR_WECC_TTR2", 5.0),
+        enable_thermal_load_restoration=get_env_bool(
+            "FIDVR_ENABLE_THERMAL_LOAD_RESTORATION", False
         ),
-        tripped_motor_q_scale=get_nonnegative_env_float(
-            "FIDVR_TRIPPED_MOTOR_Q_SCALE", 0.02
+        thermal_restore_min_delay_s=thermal_restore_min_delay_s,
+        thermal_restore_max_delay_s=thermal_restore_max_delay_s,
+        thermal_restore_ramp_s=get_nonnegative_env_float(
+            "FIDVR_THERMAL_RESTORE_RAMP_S", 30.0
         ),
-        motor_kva_factor=get_positive_env_float("FIDVR_MOTOR_KVA_FACTOR", 1.0 / 0.92),
-        motor_group_trip_offsets=motor_group_trip_offsets,
-        motor_group_restore_offsets=motor_group_restore_offsets,
-        static_kvar_per_motor_kw=get_nonnegative_env_float(
-            "FIDVR_STATIC_KVAR_PER_MOTOR_KW", 0.25
+        thermal_restore_voltage_pu=get_positive_env_float(
+            "FIDVR_THERMAL_RESTORE_VOLTAGE_PU", 0.90
         ),
-        motor_stall_voltage_pu=get_positive_env_float("FIDVR_MOTOR_STALL_VOLTAGE_PU", 0.62),
-        motor_stall_clear_voltage_pu=get_positive_env_float(
-            "FIDVR_MOTOR_STALL_CLEAR_VOLTAGE_PU", 0.88
+        thermal_restore_dropout_voltage_pu=get_positive_env_float(
+            "FIDVR_THERMAL_RESTORE_DROPOUT_VOLTAGE_PU", 0.70
         ),
-        motor_stall_delay_s=get_positive_env_float("FIDVR_MOTOR_STALL_DELAY_S", 0.05),
-        motor_stall_kw_scale=get_nonnegative_env_float(
-            "FIDVR_MOTOR_STALL_KW_SCALE", 0.50
-        ),
-        motor_stall_kvar_scale=get_positive_env_float(
-            "FIDVR_MOTOR_STALL_KVAR_SCALE", 4.0
-        ),
-        motor_thermal_trip_level=get_positive_env_float(
-            "FIDVR_MOTOR_THERMAL_TRIP_LEVEL", 1.0
-        ),
-        motor_thermal_reset_level=get_fraction_env_float(
-            "FIDVR_MOTOR_THERMAL_RESET_LEVEL", 0.35
-        ),
-        motor_thermal_trip_time_s=get_positive_env_float(
-            "FIDVR_MOTOR_THERMAL_TRIP_TIME_S", 10.0
-        ),
-        motor_thermal_trip_spread_s=get_nonnegative_env_float(
-            "FIDVR_MOTOR_THERMAL_TRIP_SPREAD_S", 0.0
-        ),
-        motor_cool_time_s=get_positive_env_float("FIDVR_MOTOR_COOL_TIME_S", 30.0),
-        motor_reconnect_delay_s=get_positive_env_float(
-            "FIDVR_MOTOR_RECONNECT_DELAY_S", 8.0
-        ),
-        motor_reconnect_ramp_s=get_positive_env_float(
-            "FIDVR_MOTOR_RECONNECT_RAMP_S", 4.0
-        ),
-        motor_reconnect_voltage_pu=get_positive_env_float(
-            "FIDVR_MOTOR_RECONNECT_VOLTAGE_PU", 0.95
+        thermal_restore_fraction=get_fraction_env_float(
+            "FIDVR_THERMAL_RESTORE_FRACTION", 1.0
         ),
         regulator_low_voltage_pu=get_positive_env_float(
             "FIDVR_REGULATOR_LOW_VOLTAGE_PU", 0.99
@@ -437,15 +449,27 @@ def get_fidvr_config(fine_dt: float) -> FidvrConfig:
         initial_capacitor_fraction=get_fraction_env_float(
             "FIDVR_CAPACITOR_INITIAL_FRACTION", 1.0
         ),
-        dynamic_step=get_positive_env_float("FIDVR_DYNAMIC_STEP", min(fine_dt / 5.0, 0.001)),
+        capacitor_lockout_after_open=get_env_bool(
+            "FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN", False
+        ),
+        capacitor_kvar_scale=get_positive_env_float(
+            "FIDVR_CAPACITOR_KVAR_SCALE", 1.0
+        ),
         enable_reg_control=get_env_bool("FIDVR_ENABLE_REG_CONTROL", False),
         enable_cap_control=get_env_bool("FIDVR_ENABLE_CAP_CONTROL", False),
         alert_signal=get_env_choice(
             "FIDVR_ALERT_SIGNAL", "dist_bus", {"dist_bus", "source", "bus"}
         ),
         alert_bus=os.environ.get("FIDVR_ALERT_BUS", "").strip(),
+        prefault_min_voltage_pu=get_positive_env_float(
+            "FIDVR_PREFAULT_MIN_VOLTAGE_PU", 0.95
+        ),
     )
 
+
+# =============================================================================
+# Shared Numeric and Naming Helpers
+# =============================================================================
 
 def _phase_value(phase_map, phase: int) -> float:
     return phase_map.get(phase, math.nan)
@@ -466,6 +490,13 @@ def _safe_mean(values: list[float]) -> float:
 def _metric_token(name: str) -> str:
     token = "".join(ch if ch.isalnum() else "_" for ch in name.strip().lower())
     return token.strip("_") or "unnamed"
+
+
+def _deterministic_unit_interval(key: str) -> float:
+    accumulator = 0
+    for idx, char in enumerate(key):
+        accumulator = (accumulator * 131 + (idx + 17) * ord(char)) % 104729
+    return accumulator / 104729.0
 
 
 def _all_finite(values) -> bool:
@@ -603,6 +634,10 @@ def get_bus_voltage_snapshot(bus_name: str) -> dict:
     }
 
 
+# =============================================================================
+# OpenDSS Case Introspection and Device Editing, the bridge between Python and the OpenDSS feeder model.
+# =============================================================================
+
 def collect_load_specs(load_scale: float) -> dict[str, LoadSpec]:
     specs = {}
     for name in dss.Loads.AllNames():
@@ -685,13 +720,27 @@ def collect_regulator_specs(regulator_names: tuple[str, ...]) -> dict[str, Regul
     return specs
 
 
-def collect_capacitor_specs(capacitor_names: tuple[str, ...]) -> dict[str, CapacitorSpec]:
+def collect_capacitor_specs(
+    capacitor_names: tuple[str, ...],
+    kvar_scale: float,
+) -> dict[str, CapacitorSpec]:
     specs = {}
     available = {name.lower() for name in dss.Capacitors.AllNames()}
     for name in capacitor_names:
         if name not in available:
             raise RuntimeError(
                 f"FIDVR capacitor '{name}' was not found in the OpenDSS case."
+            )
+        dss.Capacitors.Name(name)
+        base_kvar = float(dss.Capacitors.kvar())
+        applied_kvar = base_kvar * kvar_scale
+        if abs(kvar_scale - 1.0) > 1e-9:
+            dss.Text.Command(f"Edit Capacitor.{name} kvar={applied_kvar:.6f}")
+            dss.Capacitors.Name(name)
+            print(
+                f"Feeder FIDVR capacitor aggregation: Capacitor.{name} "
+                f"kvar {base_kvar:.3f} -> {applied_kvar:.3f} "
+                f"(scale={kvar_scale:.3f})"
             )
         dss.Circuit.SetActiveElement(f"Capacitor.{name}")
         bus_name = str(dss.CktElement.BusNames()[0])
@@ -700,6 +749,8 @@ def collect_capacitor_specs(capacitor_names: tuple[str, ...]) -> dict[str, Capac
             bus=bus_name,
             phases=int(dss.CktElement.NumPhases()),
             kv=float(dss.Capacitors.kV()),
+            base_kvar=base_kvar,
+            applied_kvar=applied_kvar,
         )
     return specs
 
@@ -709,10 +760,6 @@ def _apply_baseline_loads(load_specs: dict[str, LoadSpec]) -> None:
         dss.Text.Command(
             f"Edit Load.{spec.name} kW={spec.kw:.6f} kvar={spec.kvar:.6f}"
         )
-
-
-def _set_capacitors(capacitor_names: tuple[str, ...], enabled: bool) -> None:
-    _set_capacitor_fraction(capacitor_names, 1.0 if enabled else 0.0)
 
 
 def _set_capacitor_fraction(capacitor_names: tuple[str, ...], fraction: float) -> None:
@@ -745,6 +792,9 @@ def _initialize_capacitor_states(
         runtime_state.capacitor_states[spec.name] = is_enabled
         runtime_state.capacitor_on_armed_since[spec.name] = None
         runtime_state.capacitor_off_armed_since[spec.name] = None
+        runtime_state.capacitor_locked_out[spec.name] = False
+        runtime_state.capacitor_last_action[spec.name] = ""
+        runtime_state.capacitor_monitored_voltage[spec.name] = math.nan
         _set_enabled(f"Capacitor.{spec.name}", is_enabled)
 
 
@@ -770,11 +820,69 @@ def _set_regulator_taps(
         return math.nan
     return sum(applied_taps) / len(applied_taps)
 
-def build_surrogate_motors(
+
+# =============================================================================
+# WECC Motor D FIDVR Model
+# =============================================================================
+# Equation for the local WECC A/C motor report:
+# - Baseline PF and load partitioning: pp. 58, 66-67.
+# - Running state equations: p. 68.
+# - Stalled constant-impedance equations: pp. 68-69.
+# - Stall parameter calculations and validation: pp. 70-73.
+# Detailed traceability is in WECC_MOTOR_D_TRACEABILITY.md.
+
+def _wecc_motor_baseline_kvar(motor_kw: float, fidvr: FidvrConfig) -> float:
+    comp_pf = max(1e-6, min(0.999999, fidvr.wecc_comp_pf))
+    return motor_kw * math.tan(math.acos(comp_pf))
+
+
+def _wecc_motor_d_stall_pq_pu(v_pu: float, fidvr: FidvrConfig) -> tuple[float, float]:
+    v = max(0.0, v_pu)
+    impedance_sq = max(1e-9, fidvr.wecc_rstall**2 + fidvr.wecc_xstall**2)
+    gstall = fidvr.wecc_rstall / impedance_sq
+    bstall = fidvr.wecc_xstall / impedance_sq
+    return gstall * v * v, bstall * v * v
+
+
+def _wecc_motor_d_vstall_break(fidvr: FidvrConfig) -> float:
+    vbrk = fidvr.wecc_vbrk
+    vstall = fidvr.wecc_vstall
+    if vstall <= 0.4:
+        return vstall
+
+    v = 0.4
+    while v < vstall:
+        p_stall, _ = _wecc_motor_d_stall_pq_pu(v, fidvr)
+        p_running = 1.0 + 12.0 * max(0.0, vbrk - v) ** 3.2
+        if p_running <= p_stall:
+            return v
+        v += 0.0001
+    return vstall
+
+
+def _wecc_motor_d_running_pq_pu(v_pu: float, fidvr: FidvrConfig) -> tuple[float, float]:
+    v = max(0.0, v_pu)
+    vbrk = fidvr.wecc_vbrk
+    comp_pf = max(1e-6, min(0.999999, fidvr.wecc_comp_pf))
+    q0 = math.tan(math.acos(comp_pf)) - 6.0 * max(0.0, 1.0 - vbrk) ** 2.0
+
+    if v > vbrk:
+        return 1.0, max(0.0, q0 + 6.0 * (v - vbrk) ** 2.0)
+
+    if v > _wecc_motor_d_vstall_break(fidvr):
+        return (
+            1.0 + 12.0 * (vbrk - v) ** 3.2,
+            max(0.0, q0 + 11.0 * (vbrk - v) ** 2.5),
+        )
+
+    return _wecc_motor_d_stall_pq_pu(v, fidvr)
+
+
+def build_wecc_motor_d_motors(
     load_specs: dict[str, LoadSpec],
     fidvr: FidvrConfig,
 ) -> tuple[MotorElementSpec, ...]:
-    if not fidvr.enabled or fidvr.motor_model != "surrogate":
+    if not fidvr.enabled:
         return ()
 
     missing_motor_loads = [name for name in fidvr.motor_loads if name not in load_specs]
@@ -796,27 +904,18 @@ def build_surrogate_motors(
         if motor_kw <= 1e-9:
             continue
 
-        static_kw = max(1e-3, spec.kw - motor_kw)
-        static_kvar = max(1e-3, spec.kvar - fidvr.static_kvar_per_motor_kw * motor_kw)
+        baseline_kvar = _wecc_motor_baseline_kvar(motor_kw, fidvr)
+        static_kw = max(0.0, spec.kw - motor_kw)
+        static_kvar = spec.kvar - baseline_kvar
         dss.Text.Command(
             f"Edit Load.{spec.name} kW={static_kw:.6f} kvar={static_kvar:.6f}"
         )
 
-        kva = max(1e-3, motor_kw * fidvr.motor_kva_factor)
-        motor_name = f"comp_{spec.name}"
-        baseline_kvar = max(1e-3, motor_kw * fidvr.static_kvar_per_motor_kw)
-        stall_kw = max(1e-3, motor_kw * fidvr.motor_stall_kw_scale)
-        stall_kvar = max(
-            1e-3,
-            motor_kw * fidvr.stall_kvar_per_kw,
-            baseline_kvar * fidvr.motor_stall_kvar_scale,
+        kva = max(1e-3, motor_kw / max(1e-6, min(0.999999, fidvr.wecc_comp_pf)))
+        motor_name = f"weccmd_{spec.name}"
+        stall_pu, stall_q_pu = _wecc_motor_d_stall_pq_pu(
+            fidvr.wecc_vstall, fidvr
         )
-        trip_offset = fidvr.motor_group_trip_offsets[
-            motor_index % len(fidvr.motor_group_trip_offsets)
-        ]
-        restore_offset = fidvr.motor_group_restore_offsets[
-            motor_index % len(fidvr.motor_group_restore_offsets)
-        ]
         phase = _phase_from_bus_name(spec.bus)
 
         dss.Text.Command(
@@ -829,43 +928,37 @@ def build_surrogate_motors(
                     f"kv={spec.kv:.6f}",
                     f"kW={motor_kw:.6f}",
                     f"kvar={baseline_kvar:.6f}",
-                    "model=3",
+                    "model=1",
                     "status=variable",
-                    "vminpu=0.30",
-                    "vmaxpu=1.50",
+                    "vminpu=0.00",
+                    "vmaxpu=2.00",
                 ]
             )
         )
         motor_specs.append(
             MotorElementSpec(
                 element_name=f"Load.{motor_name}",
-                companion_load_name=f"Load.{motor_name}",
                 source_load_name=spec.name,
-                dynamic_element=False,
                 group_index=len(motor_specs),
                 phase=phase,
                 phases=spec.phases,
                 kw=motor_kw,
                 kva=kva,
                 baseline_kvar=baseline_kvar,
-                stall_kw=stall_kw,
-                stall_kvar=stall_kvar,
+                stall_kw=max(1e-3, motor_kw * stall_pu),
+                stall_kvar=max(1e-3, motor_kw * stall_q_pu),
                 bus=spec.bus,
                 kv=spec.kv,
                 conn=spec.conn,
-                trip_offset_s=trip_offset,
-                restore_offset_s=restore_offset,
             )
         )
 
     if skipped_multiphase:
         print(
-            "Feeder compressor motors: skipped non-single-phase loads for the 1-phase motor "
-            f"conversion: {', '.join(skipped_multiphase)}"
+            "Feeder compressor motors: skipped non-single-phase loads for "
+            "WECC Motor D conversion: "
+            f"{', '.join(skipped_multiphase)}"
         )
-
-    if not motor_specs:
-        return ()
 
     return tuple(motor_specs)
 
@@ -874,41 +967,18 @@ def build_motor_elements(
     load_specs: dict[str, LoadSpec],
     fidvr: FidvrConfig,
 ) -> tuple[MotorElementSpec, ...]:
-    if not fidvr.enabled:
-        return ()
-    if fidvr.motor_model == "surrogate":
-        return build_surrogate_motors(load_specs, fidvr)
-    if fidvr.motor_model == "indmach":
-        raise RuntimeError(
-            "FIDVR_MOTOR_MODEL=indmach is not implemented in this repository yet. "
-            "Use FIDVR_MOTOR_MODEL=surrogate for the staged-load FIDVR workflow."
-        )
-    raise RuntimeError(f"Unsupported FIDVR motor model: {fidvr.motor_model}")
+    return build_wecc_motor_d_motors(load_specs, fidvr)
 
+
+# =============================================================================
+# FIDVR State Summaries and Health Checks
+# =============================================================================
 
 def collect_motor_diagnostics(runtime_state: FeederRuntimeState) -> dict:
-    slips = []
-    power_factors = []
-    for motor in runtime_state.motor_elements:
-        if not motor.dynamic_element:
-            continue
-        if runtime_state.motor_group_states.get(motor.element_name, "dynamic") != "dynamic":
-            continue
-        dss.Circuit.SetActiveElement(motor.element_name)
-        variable_names = list(dss.CktElement.AllVariableNames())
-        variable_values = list(dss.CktElement.AllVariableValues())
-        variable_map = dict(zip(variable_names, variable_values))
-        slip = float(variable_map.get("Slip", math.nan))
-        power_factor = float(variable_map.get("Power Factor", math.nan))
-        if math.isfinite(slip):
-            slips.append(slip)
-        if math.isfinite(power_factor):
-            power_factors.append(power_factor)
-
     return {
-        "motor_slip_avg": _safe_mean(slips),
-        "motor_slip_max": max(slips) if slips else math.nan,
-        "motor_pf_avg": _safe_mean(power_factors),
+        "motor_slip_avg": math.nan,
+        "motor_slip_max": math.nan,
+        "motor_pf_avg": math.nan,
     }
 
 
@@ -919,26 +989,98 @@ def collect_motor_control_summary(runtime_state: FeederRuntimeState) -> dict:
     p_scales = []
     q_scales = []
     restore_fracs = []
+    thermal_restore_fracs = []
     mode_counts = {"running": 0, "stalled": 0, "tripped": 0, "restoring": 0}
+    trip_reason_counts = {"contactor": 0, "thermal": 0, "locked_out": 0}
+    thermal_restoring_groups = 0
+    thermal_restored_groups = 0
 
     for motor in runtime_state.motor_elements:
         mode = runtime_state.motor_group_states.get(motor.element_name, "running")
         if mode not in mode_counts:
             mode = "restoring"
         mode_counts[mode] += 1
+        trip_reason = runtime_state.motor_trip_reason.get(motor.element_name, "")
+        if trip_reason == "contactor":
+            trip_reason_counts["contactor"] += 1
+        elif trip_reason == "thermal":
+            trip_reason_counts["thermal"] += 1
+            if mode == "tripped" and runtime_state.motor_wecc_a_stalled.get(
+                motor.element_name, False
+            ):
+                trip_reason_counts["locked_out"] += 1
         p_scales.append(runtime_state.motor_group_p_scales.get(motor.element_name, 1.0))
         q_scales.append(runtime_state.motor_group_q_scales.get(motor.element_name, 1.0))
         restore_fracs.append(runtime_state.motor_restore_frac.get(motor.element_name, 1.0))
+        thermal_restore_frac = runtime_state.motor_thermal_restore_frac.get(
+            motor.element_name, 0.0
+        )
+        thermal_restore_target = runtime_state.motor_thermal_restore_target.get(
+            motor.element_name, 0.0
+        )
+        thermal_restore_fracs.append(thermal_restore_frac)
+        if thermal_restore_frac > 0.02 and thermal_restore_frac < thermal_restore_target - 0.02:
+            thermal_restoring_groups += 1
+        elif thermal_restore_target > 0.02 and thermal_restore_frac >= thermal_restore_target - 0.02:
+            thermal_restored_groups += 1
 
     return {
         "motor_p_scale": _safe_mean(p_scales),
         "motor_q_scale": _safe_mean(q_scales),
         "motor_restore_frac": _safe_mean(restore_fracs),
+        "motor_thermal_restore_frac": _safe_mean(thermal_restore_fracs),
         "motor_running_groups": mode_counts["running"],
         "motor_stalled_groups": mode_counts["stalled"],
         "motor_tripped_groups": mode_counts["tripped"],
         "motor_restoring_groups": mode_counts["restoring"],
+        "motor_thermal_restoring_groups": thermal_restoring_groups,
+        "motor_thermal_restored_groups": thermal_restored_groups,
+        "motor_contactor_open_groups": trip_reason_counts["contactor"],
+        "motor_thermal_trip_groups": trip_reason_counts["thermal"],
+        "motor_locked_out_groups": trip_reason_counts["locked_out"],
     }
+
+
+def log_prefault_voltage_health(
+    feeder_idx: int,
+    fidvr: FidvrConfig,
+    dist_bus_snapshot: dict,
+    alert_signal_info: dict[str, object],
+    source_v_pu: float,
+) -> None:
+    dist_v_pu = float(
+        dist_bus_snapshot.get(
+            "positive_seq_mag", float(dist_bus_snapshot.get("avg_mag", math.nan))
+        )
+    )
+    alert_v_pu = float(alert_signal_info["alert_v_pu"])
+    minimum = fidvr.prefault_min_voltage_pu
+
+    print(
+        f"Feeder {feeder_idx}: pre-fault health "
+        f"source_v={source_v_pu:.6f} pu "
+        f"dist_bus={dist_bus_snapshot['bus']} dist_v={dist_v_pu:.6f} pu "
+        f"alert={alert_signal_info['alert_label']} alert_v={alert_v_pu:.6f} pu "
+        f"min_expected={minimum:.3f} pu"
+    )
+
+    warnings = []
+    if math.isfinite(source_v_pu) and source_v_pu < minimum:
+        warnings.append(f"source {source_v_pu:.3f} pu")
+    if math.isfinite(dist_v_pu) and dist_v_pu < minimum:
+        warnings.append(f"{dist_bus_snapshot['bus']} {dist_v_pu:.3f} pu")
+    if math.isfinite(alert_v_pu) and alert_v_pu < minimum:
+        warnings.append(
+            f"{alert_signal_info['alert_label']} {alert_v_pu:.3f} pu"
+        )
+    if warnings:
+        print(
+            f"[Feeder{feeder_idx:02d} PREFLIGHT WARN] "
+            "Pre-fault voltage is already depressed at "
+            + ", ".join(warnings)
+            + ". This case is behaving more like a stressed-feeder demonstrator "
+            "than a healthy pre-contingency calibration."
+        )
 
 
 def collect_regulator_tap_summary(regulator_specs: dict[str, RegulatorSpec]) -> dict:
@@ -957,27 +1099,9 @@ def collect_regulator_tap_summary(regulator_specs: dict[str, RegulatorSpec]) -> 
     return summary
 
 
-def enter_dynamic_mode_if_needed(
-    runtime_state: FeederRuntimeState,
-    fidvr: FidvrConfig,
-    start_time: float,
-) -> None:
-    if runtime_state.dynamics_enabled or not runtime_state.motor_elements:
-        return
-
-    dynamic_motors = [motor for motor in runtime_state.motor_elements if motor.dynamic_element]
-    if not dynamic_motors:
-        return
-
-    dss.Solution.SolveDirect()
-    for motor in dynamic_motors:
-        dss.Text.Command(f"Edit {motor.element_name} SlipOption=variableslip")
-    dss.Text.Command("set mode=dynamics")
-    dss.Solution.Number(1)
-    dss.Solution.StepSize(fidvr.dynamic_step)
-    runtime_state.dynamics_enabled = True
-    runtime_state.dynamic_time = start_time
-
+# =============================================================================
+# FIDVR Timeline, Motor Updates, and Feeder Controls
+# =============================================================================
 
 def get_fidvr_timeline(disturbance: DisturbanceConfig, fidvr: FidvrConfig) -> dict:
     if not disturbance.enabled:
@@ -993,54 +1117,12 @@ def get_fidvr_timeline(disturbance: DisturbanceConfig, fidvr: FidvrConfig) -> di
     }
 
 
-def _smoothstep(progress: float) -> float:
-    clipped = max(0.0, min(1.0, progress))
-    return clipped * clipped * (3.0 - 2.0 * clipped)
-
-
-def _ramped_value(
-    current_time: float,
-    start_time: float,
-    duration: float,
-    start_value: float,
-    end_value: float,
-) -> float:
-    if current_time <= start_time:
-        return start_value
-    if duration <= 0.0 or current_time >= start_time + duration:
-        return end_value
-    progress = _smoothstep((current_time - start_time) / duration)
-    return start_value + progress * (end_value - start_value)
-
-
-def _stage_progress(current_time: float, start_time: float, end_time: float) -> float:
-    duration = max(end_time - start_time, 1e-9)
-    return max(0.0, min(1.0, (current_time - start_time) / duration))
-
-
 def _average_baseline_tap(regulator_specs: dict[str, RegulatorSpec]) -> float:
     if not regulator_specs:
         return math.nan
     return sum(spec.baseline_tap for spec in regulator_specs.values()) / len(
         regulator_specs
     )
-
-
-def _thermal_trip_time_for_motor(motor: MotorElementSpec, fidvr: FidvrConfig) -> float:
-    pattern_len = max(len(fidvr.motor_group_trip_offsets), 1)
-    position = (motor.group_index % pattern_len) / max(pattern_len - 1, 1)
-    trip_time = (
-        fidvr.motor_thermal_trip_time_s
-        + motor.trip_offset_s
-        + fidvr.motor_thermal_trip_spread_s * position
-    )
-    return max(2.0, trip_time)
-
-
-def _thermal_heating_rate(v_motor: float, fidvr: FidvrConfig, trip_time: float) -> float:
-    severity = max(0.0, fidvr.motor_stall_voltage_pu - v_motor)
-    multiplier = 1.0 + 2.0 * severity / max(fidvr.motor_stall_voltage_pu, 1e-6)
-    return multiplier / trip_time
 
 
 def get_capacitor_fraction(
@@ -1063,42 +1145,287 @@ def apply_motor_group_targets(
     target_kw = max(1e-3, target_kw)
     target_kvar = max(1e-3, target_kvar)
 
-    if not motor.dynamic_element:
-        if group_mode == "running":
-            target_kw = motor.kw
-            target_kvar = motor.baseline_kvar
-        dss.Text.Command(
-            f"Edit {motor.element_name} kW={target_kw:.6f} kvar={target_kvar:.6f}"
-        )
-        runtime_state.motor_group_states[motor.element_name] = group_mode
-        runtime_state.motor_group_p_scales[motor.element_name] = target_kw / max(
-            motor.kw, 1e-6
-        )
-        runtime_state.motor_group_q_scales[motor.element_name] = target_kvar / max(
-            motor.baseline_kvar, 1e-6
-        )
-        return
-
-    current_mode = runtime_state.motor_group_states.get(motor.element_name)
-    if current_mode != group_mode:
-        use_dynamic = group_mode == "running"
-        _set_enabled(motor.element_name, use_dynamic)
-        _set_enabled(motor.companion_load_name, not use_dynamic)
-        runtime_state.motor_group_states[motor.element_name] = group_mode
-
-    if group_mode == "running":
-        dss.Text.Command(f"Edit {motor.element_name} kW={motor.kw:.6f}")
-        runtime_state.motor_group_p_scales[motor.element_name] = 1.0
-        runtime_state.motor_group_q_scales[motor.element_name] = 1.0
-        return
-
     dss.Text.Command(
-        f"Edit {motor.companion_load_name} kW={target_kw:.6f} kvar={target_kvar:.6f}"
+        f"Edit {motor.element_name} kW={target_kw:.6f} kvar={target_kvar:.6f}"
     )
+    runtime_state.motor_group_states[motor.element_name] = group_mode
     runtime_state.motor_group_p_scales[motor.element_name] = target_kw / max(motor.kw, 1e-6)
     runtime_state.motor_group_q_scales[motor.element_name] = target_kvar / max(
         motor.baseline_kvar, 1e-6
     )
+
+
+def _clip_fraction(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _wecc_contactor_fraction(previous: float, v_motor: float, fidvr: FidvrConfig) -> float:
+    previous = _clip_fraction(previous)
+    off_span = max(1e-6, fidvr.wecc_vc1off - fidvr.wecc_vc2off)
+    on_span = max(1e-6, fidvr.wecc_vc1on - fidvr.wecc_vc2on)
+    off_curve = _clip_fraction((v_motor - fidvr.wecc_vc2off) / off_span)
+    on_curve = _clip_fraction((v_motor - fidvr.wecc_vc2on) / on_span)
+
+    if v_motor < fidvr.wecc_vc1off:
+        return min(previous, off_curve)
+    if v_motor > fidvr.wecc_vc2on:
+        return max(previous, on_curve)
+    return previous
+
+
+def _wecc_thermal_fraction(theta: float, fidvr: FidvrConfig) -> float:
+    if theta <= fidvr.wecc_th1t:
+        return 1.0
+    if theta >= fidvr.wecc_th2t:
+        return 0.0
+    return _clip_fraction(
+        (fidvr.wecc_th2t - theta)
+        / max(1e-6, fidvr.wecc_th2t - fidvr.wecc_th1t)
+    )
+
+
+def _wecc_update_temperature(
+    theta: float,
+    stalled: bool,
+    v_motor: float,
+    fidvr: FidvrConfig,
+    dt: float,
+) -> float:
+    if stalled:
+        i2r, _ = _wecc_motor_d_stall_pq_pu(v_motor, fidvr)
+        target = i2r
+    else:
+        target = 0.0
+    if dt <= 0.0:
+        return max(0.0, theta)
+    alpha = min(1.0, dt / max(1e-6, fidvr.wecc_tth))
+    return max(0.0, theta + alpha * (target - theta))
+
+
+def _thermal_restore_delay_s(element: str, fidvr: FidvrConfig) -> float:
+    span = fidvr.thermal_restore_max_delay_s - fidvr.thermal_restore_min_delay_s
+    if span <= 1e-9:
+        return fidvr.thermal_restore_min_delay_s
+    return (
+        fidvr.thermal_restore_min_delay_s
+        + span * _deterministic_unit_interval(f"thermal_restore:{element}")
+    )
+
+
+def _update_wecc_thermal_load_restoration(
+    runtime_state: FeederRuntimeState,
+    fidvr: FidvrConfig,
+    element: str,
+    thermal_trip_fraction: float,
+    v_motor: float,
+    current_time: float,
+) -> float:
+    if not fidvr.enable_thermal_load_restoration:
+        runtime_state.motor_thermal_restore_trip_time[element] = None
+        runtime_state.motor_thermal_restore_started_at[element] = None
+        runtime_state.motor_thermal_restore_frac[element] = 0.0
+        runtime_state.motor_thermal_restore_target[element] = 0.0
+        return 0.0
+
+    delay_s = runtime_state.motor_thermal_restore_delay_s.get(element)
+    if delay_s is None or not math.isfinite(delay_s):
+        delay_s = _thermal_restore_delay_s(element, fidvr)
+        runtime_state.motor_thermal_restore_delay_s[element] = delay_s
+
+    state = ThermalLoadRestorationState(
+        trip_time_s=runtime_state.motor_thermal_restore_trip_time.get(element),
+        restore_started_at_s=runtime_state.motor_thermal_restore_started_at.get(element),
+        restored_fraction=runtime_state.motor_thermal_restore_frac.get(element, 0.0),
+        target_fraction=runtime_state.motor_thermal_restore_target.get(element, 0.0),
+    )
+    next_state = update_thermal_load_restoration(
+        state,
+        ThermalLoadRestorationConfig(
+            enabled=True,
+            restore_delay_s=delay_s,
+            restore_ramp_s=fidvr.thermal_restore_ramp_s,
+            restore_voltage_pu=fidvr.thermal_restore_voltage_pu,
+            dropout_voltage_pu=fidvr.thermal_restore_dropout_voltage_pu,
+            restore_fraction=fidvr.thermal_restore_fraction,
+        ),
+        thermal_trip_fraction=thermal_trip_fraction,
+        voltage_pu=v_motor,
+        current_time_s=current_time,
+    )
+    runtime_state.motor_thermal_restore_trip_time[element] = next_state.trip_time_s
+    runtime_state.motor_thermal_restore_started_at[element] = (
+        next_state.restore_started_at_s
+    )
+    runtime_state.motor_thermal_restore_frac[element] = next_state.restored_fraction
+    runtime_state.motor_thermal_restore_target[element] = next_state.target_fraction
+    return next_state.restored_fraction
+
+
+def _update_wecc_motor_d_state(
+    runtime_state: FeederRuntimeState,
+    fidvr: FidvrConfig,
+    motor: MotorElementSpec,
+    v_motor: float,
+    current_time: float,
+    dt: float,
+) -> tuple[str, float, float, float]:
+    """Advance one Motor D group by one co-simulation/control interval."""
+
+    element = motor.element_name
+    frst = _clip_fraction(fidvr.wecc_frst)
+    frac_a = 1.0 - frst
+    frac_b = frst
+
+    a_stalled = runtime_state.motor_wecc_a_stalled.get(element, False)
+    b_stalled = runtime_state.motor_wecc_b_stalled.get(element, False)
+    b_restarted = runtime_state.motor_wecc_b_restarted.get(element, False)
+    stall_armed_since = runtime_state.motor_stall_armed_since.get(element)
+    reconnect_armed_since = runtime_state.motor_reconnect_armed_since.get(element)
+
+    # Tstall is short in the WECC defaults, so it is sensitive to the
+    # co-simulation/control step. FINE_DT must resolve this timer.
+    if (not a_stalled or (not b_stalled and not b_restarted)) and v_motor < fidvr.wecc_vstall:
+        if stall_armed_since is None:
+            stall_armed_since = current_time
+        elif current_time - stall_armed_since >= fidvr.wecc_tstall:
+            a_stalled = True
+            b_stalled = frst > 0.0 and not b_restarted
+            stall_armed_since = None
+    elif v_motor >= fidvr.wecc_vstall:
+        stall_armed_since = None
+
+    if b_stalled and v_motor > fidvr.wecc_vrst:
+        if reconnect_armed_since is None:
+            reconnect_armed_since = current_time
+        elif current_time - reconnect_armed_since >= fidvr.wecc_trst:
+            b_stalled = False
+            b_restarted = True
+            reconnect_armed_since = None
+    else:
+        reconnect_armed_since = None
+
+    contactor_fraction = _wecc_contactor_fraction(
+        runtime_state.motor_contactor_fraction.get(element, 1.0),
+        v_motor,
+        fidvr,
+    )
+
+    uv_trip_fraction = runtime_state.motor_uv_trip_fraction.get(element, 0.0)
+    uv1_armed_since = runtime_state.motor_uv1_armed_since.get(element)
+    uv2_armed_since = runtime_state.motor_uv2_armed_since.get(element)
+    if fidvr.wecc_fuvr > 0.0:
+        if v_motor < fidvr.wecc_uvtr1:
+            uv1_armed_since = current_time if uv1_armed_since is None else uv1_armed_since
+            if current_time - uv1_armed_since >= fidvr.wecc_ttr1:
+                uv_trip_fraction = max(uv_trip_fraction, fidvr.wecc_fuvr)
+        else:
+            uv1_armed_since = None
+
+        if v_motor < fidvr.wecc_uvtr2:
+            uv2_armed_since = current_time if uv2_armed_since is None else uv2_armed_since
+            if current_time - uv2_armed_since >= fidvr.wecc_ttr2:
+                uv_trip_fraction = max(uv_trip_fraction, fidvr.wecc_fuvr)
+        else:
+            uv2_armed_since = None
+
+    theta_a = _wecc_update_temperature(
+        runtime_state.motor_thermal_state_a.get(element, 0.0),
+        a_stalled,
+        v_motor,
+        fidvr,
+        dt,
+    )
+    theta_b = _wecc_update_temperature(
+        runtime_state.motor_thermal_state_b.get(element, 0.0),
+        b_stalled,
+        v_motor,
+        fidvr,
+        dt,
+    )
+    kth_a = _wecc_thermal_fraction(theta_a, fidvr)
+    kth_b = _wecc_thermal_fraction(theta_b, fidvr)
+
+    run_p, run_q = _wecc_motor_d_running_pq_pu(v_motor, fidvr)
+    stall_p, stall_q = _wecc_motor_d_stall_pq_pu(v_motor, fidvr)
+    p_a, q_a = (stall_p, stall_q) if a_stalled else (run_p, run_q)
+    p_b, q_b = (stall_p, stall_q) if b_stalled else (run_p, run_q)
+    kuvr = 1.0 - _clip_fraction(uv_trip_fraction)
+
+    p_pu = contactor_fraction * kuvr * (
+        frac_a * kth_a * p_a + frac_b * kth_b * p_b
+    )
+    q_pu = contactor_fraction * kuvr * (
+        frac_a * kth_a * q_a + frac_b * kth_b * q_b
+    )
+
+    stalled_fraction = frac_a * float(a_stalled) * kth_a + frac_b * float(b_stalled) * kth_b
+    thermal_trip_fraction = frac_a * (1.0 - kth_a) + frac_b * (1.0 - kth_b)
+    disconnected_fraction = 1.0 - contactor_fraction * kuvr
+    thermal_restore_frac = _update_wecc_thermal_load_restoration(
+        runtime_state,
+        fidvr,
+        element,
+        thermal_trip_fraction,
+        v_motor,
+        current_time,
+    )
+    thermal_restore_frac = min(thermal_restore_frac, thermal_trip_fraction)
+    if thermal_restore_frac > 1e-9:
+        p_pu += contactor_fraction * kuvr * thermal_restore_frac * run_p
+        q_pu += contactor_fraction * kuvr * thermal_restore_frac * run_q
+
+    restore_frac = _clip_fraction(
+        contactor_fraction
+        * kuvr
+        * (
+            frac_a * (1.0 - float(a_stalled))
+            + frac_b * (1.0 - float(b_stalled))
+            + thermal_restore_frac
+        )
+    )
+    thermal_restore_target = runtime_state.motor_thermal_restore_target.get(element, 0.0)
+    thermal_restore_active = thermal_restore_frac > 0.02
+    thermal_restore_complete = (
+        thermal_restore_target > 0.02
+        and thermal_restore_frac >= thermal_restore_target - 0.02
+    )
+    if thermal_restore_active and not thermal_restore_complete:
+        state = "restoring"
+    elif thermal_restore_complete and restore_frac >= 0.98:
+        state = "running"
+    elif disconnected_fraction > 0.02 or thermal_trip_fraction > 0.02:
+        state = "tripped"
+    elif stalled_fraction > 0.02:
+        state = "stalled"
+    elif b_restarted:
+        state = "restoring"
+    else:
+        state = "running"
+
+    runtime_state.motor_wecc_a_stalled[element] = a_stalled
+    runtime_state.motor_wecc_b_stalled[element] = b_stalled
+    runtime_state.motor_wecc_b_restarted[element] = b_restarted
+    runtime_state.motor_stall_armed_since[element] = stall_armed_since
+    runtime_state.motor_reconnect_armed_since[element] = reconnect_armed_since
+    runtime_state.motor_contactor_fraction[element] = contactor_fraction
+    runtime_state.motor_uv_trip_fraction[element] = _clip_fraction(uv_trip_fraction)
+    runtime_state.motor_uv1_armed_since[element] = uv1_armed_since
+    runtime_state.motor_uv2_armed_since[element] = uv2_armed_since
+    runtime_state.motor_thermal_state_a[element] = theta_a
+    runtime_state.motor_thermal_state_b[element] = theta_b
+    runtime_state.motor_thermal_state[element] = max(theta_a, theta_b)
+    runtime_state.motor_trip_reason[element] = (
+        "uvr"
+        if uv_trip_fraction > 1e-9
+        else "contactor"
+        if disconnected_fraction > 0.02
+        else "thermal"
+        if thermal_trip_fraction > 0.02
+        else ""
+    )
+    runtime_state.motor_restore_frac[element] = restore_frac
+
+    return state, max(1e-3, motor.kw * p_pu), max(1e-3, motor.kw * q_pu), restore_frac
 
 
 def update_motor_group_states(
@@ -1110,101 +1437,16 @@ def update_motor_group_states(
     for motor in runtime_state.motor_elements:
         v_motor = get_monitored_bus_voltage_pu(motor.bus)
         element = motor.element_name
-        state = runtime_state.motor_group_states.get(element, "running")
-        thermal = runtime_state.motor_thermal_state.get(element, 0.0)
-        stall_armed_since = runtime_state.motor_stall_armed_since.get(element)
-        reconnect_armed_since = runtime_state.motor_reconnect_armed_since.get(element)
-        restore_started_at = runtime_state.motor_restore_started_at.get(element)
-        trip_until = runtime_state.motor_trip_until.get(element, 0.0)
 
-        thermal = max(0.0, thermal - dt / max(fidvr.motor_cool_time_s, 1e-6))
-        restore_frac = 1.0 if state == "running" else 0.0
-
-        if state == "running":
-            if v_motor <= fidvr.motor_stall_voltage_pu:
-                if stall_armed_since is None:
-                    stall_armed_since = current_time
-                elif current_time - stall_armed_since >= fidvr.motor_stall_delay_s:
-                    state = "stalled"
-                    stall_armed_since = None
-            elif v_motor >= fidvr.motor_stall_clear_voltage_pu:
-                stall_armed_since = None
-        elif state == "stalled":
-            thermal += dt * _thermal_heating_rate(
-                v_motor, fidvr, _thermal_trip_time_for_motor(motor, fidvr)
-            )
-            if thermal >= fidvr.motor_thermal_trip_level:
-                state = "tripped"
-                trip_until = current_time + max(0.0, motor.restore_offset_s)
-                reconnect_armed_since = None
-                restore_started_at = None
-            restore_frac = 0.0
-        elif state == "tripped":
-            thermal = max(0.0, thermal - dt / max(fidvr.motor_cool_time_s, 1e-6))
-            if (
-                thermal <= fidvr.motor_thermal_reset_level
-                and current_time >= trip_until
-                and v_motor >= fidvr.motor_reconnect_voltage_pu
-            ):
-                if reconnect_armed_since is None:
-                    reconnect_armed_since = current_time
-                elif (
-                    current_time - reconnect_armed_since
-                    >= fidvr.motor_reconnect_delay_s
-                ):
-                    state = "restoring"
-                    restore_started_at = current_time
-                    reconnect_armed_since = None
-            else:
-                reconnect_armed_since = None
-            restore_frac = 0.0
-        elif state == "restoring":
-            thermal = max(0.0, thermal - dt / max(fidvr.motor_cool_time_s, 1e-6))
-            if v_motor < fidvr.motor_stall_voltage_pu:
-                state = "stalled"
-                stall_armed_since = None
-                restore_started_at = None
-                restore_frac = 0.0
-            else:
-                restore_started_at = (
-                    current_time if restore_started_at is None else restore_started_at
-                )
-                restore_frac = min(
-                    1.0,
-                    (current_time - restore_started_at)
-                    / max(fidvr.motor_reconnect_ramp_s, 1e-6),
-                )
-                if restore_frac >= 1.0 - 1e-9:
-                    state = "running"
-                    restore_started_at = None
-                    restore_frac = 1.0
-
-        if state == "running":
-            target_kw = motor.kw
-            target_kvar = motor.baseline_kvar
-            restore_frac = 1.0
-        elif state == "stalled":
-            target_kw = motor.stall_kw
-            target_kvar = motor.stall_kvar
-            restore_frac = 0.0
-        elif state == "tripped":
-            target_kw = max(1e-3, motor.kw * fidvr.tripped_motor_p_scale)
-            target_kvar = max(
-                1e-3, motor.baseline_kvar * fidvr.tripped_motor_q_scale
-            )
-            restore_frac = 0.0
-        else:
-            start_kw = max(1e-3, motor.kw * fidvr.tripped_motor_p_scale)
-            start_kvar = max(1e-3, motor.baseline_kvar * fidvr.tripped_motor_q_scale)
-            target_kw = start_kw + restore_frac * (motor.kw - start_kw)
-            target_kvar = start_kvar + restore_frac * (motor.baseline_kvar - start_kvar)
-
+        state, target_kw, target_kvar, restore_frac = _update_wecc_motor_d_state(
+            runtime_state,
+            fidvr,
+            motor,
+            v_motor,
+            current_time,
+            dt,
+        )
         runtime_state.motor_group_states[element] = state
-        runtime_state.motor_stall_armed_since[element] = stall_armed_since
-        runtime_state.motor_thermal_state[element] = thermal
-        runtime_state.motor_trip_until[element] = trip_until
-        runtime_state.motor_reconnect_armed_since[element] = reconnect_armed_since
-        runtime_state.motor_restore_started_at[element] = restore_started_at
         runtime_state.motor_restore_frac[element] = restore_frac
         apply_motor_group_targets(
             runtime_state,
@@ -1228,35 +1470,37 @@ def update_capacitor_controls(
         v_cap = get_monitored_bus_voltage_pu(
             spec.bus, prefer_positive_sequence=spec.phases >= 3
         )
-        is_enabled = runtime_state.capacitor_states.get(spec.name, True)
-        on_armed_since = runtime_state.capacitor_on_armed_since.get(spec.name)
-        off_armed_since = runtime_state.capacitor_off_armed_since.get(spec.name)
+        control_state = DelayedShuntControlState(
+            enabled=runtime_state.capacitor_states.get(spec.name, True),
+            on_armed_since_s=runtime_state.capacitor_on_armed_since.get(spec.name),
+            off_armed_since_s=runtime_state.capacitor_off_armed_since.get(spec.name),
+            locked_out=runtime_state.capacitor_locked_out.get(spec.name, False),
+        )
+        control_config = DelayedShuntControlConfig(
+            on_voltage_pu=fidvr.capacitor_on_voltage_pu,
+            off_voltage_pu=fidvr.capacitor_off_voltage_pu,
+            on_delay_s=fidvr.capacitor_on_delay_s,
+            off_delay_s=fidvr.capacitor_off_delay_s,
+            lockout_after_open=fidvr.capacitor_lockout_after_open,
+        )
+        updated_state = update_delayed_shunt_control(
+            control_state,
+            control_config,
+            monitored_voltage_pu=v_cap,
+            current_time_s=current_time,
+        )
 
-        if is_enabled:
-            on_armed_since = None
-            if v_cap >= fidvr.capacitor_off_voltage_pu:
-                if off_armed_since is None:
-                    off_armed_since = current_time
-                elif current_time - off_armed_since >= fidvr.capacitor_off_delay_s:
-                    is_enabled = False
-                    off_armed_since = None
-            elif v_cap <= fidvr.capacitor_off_voltage_pu - 0.01:
-                off_armed_since = None
-        else:
-            off_armed_since = None
-            if v_cap <= fidvr.capacitor_on_voltage_pu:
-                if on_armed_since is None:
-                    on_armed_since = current_time
-                elif current_time - on_armed_since >= fidvr.capacitor_on_delay_s:
-                    is_enabled = True
-                    on_armed_since = None
-            elif v_cap >= fidvr.capacitor_on_voltage_pu + 0.01:
-                on_armed_since = None
-
-        runtime_state.capacitor_states[spec.name] = is_enabled
-        runtime_state.capacitor_on_armed_since[spec.name] = on_armed_since
-        runtime_state.capacitor_off_armed_since[spec.name] = off_armed_since
-        _set_enabled(f"Capacitor.{spec.name}", is_enabled)
+        runtime_state.capacitor_states[spec.name] = updated_state.enabled
+        runtime_state.capacitor_on_armed_since[spec.name] = (
+            updated_state.on_armed_since_s
+        )
+        runtime_state.capacitor_off_armed_since[spec.name] = (
+            updated_state.off_armed_since_s
+        )
+        runtime_state.capacitor_locked_out[spec.name] = updated_state.locked_out
+        runtime_state.capacitor_last_action[spec.name] = updated_state.last_action
+        runtime_state.capacitor_monitored_voltage[spec.name] = v_cap
+        _set_enabled(f"Capacitor.{spec.name}", updated_state.enabled)
 
     return get_capacitor_fraction(runtime_state, capacitor_specs)
 
@@ -1332,6 +1576,12 @@ def describe_fidvr_stage(
     cap_fraction = get_capacitor_fraction(runtime_state, capacitor_specs)
     control_summary = collect_motor_control_summary(runtime_state)
     restore_frac = control_summary.get("motor_restore_frac", 1.0)
+    thermal_restore_frac = control_summary.get("motor_thermal_restore_frac", 0.0)
+    thermal_restoration_active = (
+        control_summary.get("motor_thermal_restoring_groups", 0) > 0
+        or control_summary.get("motor_thermal_restored_groups", 0) > 0
+        or thermal_restore_frac > 0.02
+    )
     baseline_tap = _average_baseline_tap(regulator_specs)
 
     if not fidvr.enabled:
@@ -1342,7 +1592,7 @@ def describe_fidvr_stage(
         stage = "FAULT_ACTIVE"
     elif control_summary.get("motor_stalled_groups", 0) > 0:
         stage = "STALLED_MOTORS"
-    elif control_summary.get("motor_restoring_groups", 0) > 0 or restore_frac < 0.98:
+    elif thermal_restoration_active:
         stage = "LOAD_RESTORATION"
     elif cap_fraction < 0.99:
         stage = "CAPS_OFF"
@@ -1360,10 +1610,11 @@ def describe_fidvr_stage(
         "stage": stage,
         "motor_p_scale": control_summary.get("motor_p_scale", 1.0),
         "motor_q_scale": control_summary.get("motor_q_scale", 1.0),
-        "caps_on": cap_fraction >= 0.5,
+        "caps_status": shunt_status_from_fraction(cap_fraction),
         "cap_fraction": cap_fraction,
         "tap_offset": 0.0 if not math.isfinite(applied_tap) or not math.isfinite(baseline_tap) else applied_tap - baseline_tap,
         "restore_frac": restore_frac,
+        "thermal_restore_frac": thermal_restore_frac,
         "source_target_pu": 1.0,
     }
 
@@ -1377,10 +1628,17 @@ def apply_fidvr_controls(
     current_time: float,
     disturbance: DisturbanceConfig,
 ) -> float:
+    """Apply all feeder side controls before the OpenDSS snapshot solve."""
+
     if not fidvr.enabled:
         _apply_baseline_loads(load_specs)
         for spec in capacitor_specs.values():
             runtime_state.capacitor_states[spec.name] = True
+            runtime_state.capacitor_on_armed_since[spec.name] = None
+            runtime_state.capacitor_off_armed_since[spec.name] = None
+            runtime_state.capacitor_locked_out[spec.name] = False
+            runtime_state.capacitor_last_action[spec.name] = ""
+            runtime_state.capacitor_monitored_voltage[spec.name] = math.nan
             _set_enabled(f"Capacitor.{spec.name}", True)
         return _set_regulator_taps(regulator_specs, 0.0)
 
@@ -1391,10 +1649,25 @@ def apply_fidvr_controls(
             runtime_state.motor_group_q_scales[motor.element_name] = 1.0
             runtime_state.motor_stall_armed_since[motor.element_name] = None
             runtime_state.motor_thermal_state[motor.element_name] = 0.0
-            runtime_state.motor_trip_until[motor.element_name] = 0.0
+            runtime_state.motor_trip_reason[motor.element_name] = ""
             runtime_state.motor_reconnect_armed_since[motor.element_name] = None
-            runtime_state.motor_restore_started_at[motor.element_name] = None
             runtime_state.motor_restore_frac[motor.element_name] = 1.0
+            runtime_state.motor_contactor_fraction[motor.element_name] = 1.0
+            runtime_state.motor_uv_trip_fraction[motor.element_name] = 0.0
+            runtime_state.motor_uv1_armed_since[motor.element_name] = None
+            runtime_state.motor_uv2_armed_since[motor.element_name] = None
+            runtime_state.motor_thermal_state_a[motor.element_name] = 0.0
+            runtime_state.motor_thermal_state_b[motor.element_name] = 0.0
+            runtime_state.motor_wecc_a_stalled[motor.element_name] = False
+            runtime_state.motor_wecc_b_stalled[motor.element_name] = False
+            runtime_state.motor_wecc_b_restarted[motor.element_name] = False
+            runtime_state.motor_thermal_restore_trip_time[motor.element_name] = None
+            runtime_state.motor_thermal_restore_started_at[motor.element_name] = None
+            runtime_state.motor_thermal_restore_frac[motor.element_name] = 0.0
+            runtime_state.motor_thermal_restore_target[motor.element_name] = 0.0
+            runtime_state.motor_thermal_restore_delay_s[motor.element_name] = (
+                _thermal_restore_delay_s(motor.element_name, fidvr)
+            )
             apply_motor_group_targets(
                 runtime_state,
                 motor,
@@ -1426,6 +1699,9 @@ def apply_fidvr_controls(
             )
             runtime_state.capacitor_on_armed_since[spec.name] = None
             runtime_state.capacitor_off_armed_since[spec.name] = None
+            runtime_state.capacitor_locked_out[spec.name] = False
+            runtime_state.capacitor_last_action[spec.name] = ""
+            runtime_state.capacitor_monitored_voltage[spec.name] = math.nan
             _set_enabled(
                 f"Capacitor.{spec.name}",
                 runtime_state.capacitor_states[spec.name],
@@ -1462,7 +1738,6 @@ def finalize_stage_info(
             "effective_v_pu": effective_v_pu,
             "effective_voltage": _complex_from_polar(effective_v_pu, tx_angle_deg),
             "applied_tap": applied_tap,
-            "dynamics_enabled": runtime_state.dynamics_enabled,
         }
     )
     finalized.update(collect_regulator_tap_summary(regulator_specs))
@@ -1485,6 +1760,35 @@ def format_regulator_taps_for_log(stage_info: dict) -> str:
     return " ".join(tokens)
 
 
+def format_capacitor_states_for_log(
+    capacitor_specs: dict[str, CapacitorSpec],
+    runtime_state: FeederRuntimeState,
+) -> str:
+    tokens = []
+    for spec in capacitor_specs.values():
+        label = spec.name[:1].upper() + spec.name[1:]
+        enabled = runtime_state.capacitor_states.get(spec.name, True)
+        tokens.append(f"{label}={'on' if enabled else 'off'}")
+
+        monitored_voltage = runtime_state.capacitor_monitored_voltage.get(
+            spec.name, math.nan
+        )
+        if math.isfinite(monitored_voltage):
+            tokens.append(f"{label}V={monitored_voltage:.6f}")
+
+        if runtime_state.capacitor_locked_out.get(spec.name, False):
+            tokens.append(f"{label}Lock=1")
+
+        action = runtime_state.capacitor_last_action.get(spec.name, "")
+        if action:
+            tokens.append(f"{label}Action={action}")
+    return " ".join(tokens)
+
+
+# =============================================================================
+# Distribution Solve Step
+# =============================================================================
+
 def run_snapshot_solution(
     raw_tx_voltage: complex,
     load_specs: dict[str, LoadSpec],
@@ -1495,6 +1799,8 @@ def run_snapshot_solution(
     runtime_state: FeederRuntimeState,
     current_time: float,
 ):
+    """Update feeder controls, solve OpenDSS, and summarize the solved state."""
+
     tx_v_pu = abs(raw_tx_voltage)
     tx_angle_deg = math.degrees(math.atan2(raw_tx_voltage.imag, raw_tx_voltage.real))
     applied_tap = apply_fidvr_controls(
@@ -1537,103 +1843,6 @@ def run_snapshot_solution(
     return finalized_stage_info
 
 
-def run_dynamic_solution(
-    raw_tx_voltage: complex,
-    load_specs: dict[str, LoadSpec],
-    regulator_specs: dict[str, RegulatorSpec],
-    capacitor_specs: dict[str, CapacitorSpec],
-    disturbance: DisturbanceConfig,
-    fidvr: FidvrConfig,
-    runtime_state: FeederRuntimeState,
-    current_time: float,
-):
-    tx_v_pu = abs(raw_tx_voltage)
-    tx_angle_deg = math.degrees(math.atan2(raw_tx_voltage.imag, raw_tx_voltage.real))
-
-    if current_time + 1e-12 < runtime_state.dynamic_time:
-        raise RuntimeError(
-            f"Requested dynamic solve at t={current_time:.6f}s but the dynamic "
-            f"state is already at t={runtime_state.dynamic_time:.6f}s."
-        )
-
-    last_stage_info = dict(runtime_state.last_stage_info)
-
-    if current_time <= runtime_state.dynamic_time + 1e-12:
-        applied_tap = apply_fidvr_controls(
-            load_specs,
-            regulator_specs,
-            capacitor_specs,
-            fidvr,
-            runtime_state,
-            current_time,
-            disturbance,
-        )
-        effective_v_pu = tx_v_pu
-        dss.Text.Command(
-            f"Edit Vsource.Source pu={effective_v_pu:.6f} angle={tx_angle_deg:.6f}"
-        )
-        dss.Solution.SolveSnap()
-        stage_info = describe_fidvr_stage(
-            current_time,
-            disturbance,
-            fidvr,
-            runtime_state,
-            regulator_specs,
-            capacitor_specs,
-            applied_tap,
-        )
-        last_stage_info = finalize_stage_info(
-            stage_info,
-            tx_v_pu,
-            tx_angle_deg,
-            effective_v_pu,
-            applied_tap,
-            regulator_specs,
-            runtime_state,
-        )
-    else:
-        while runtime_state.dynamic_time + 1e-12 < current_time:
-            next_time = min(current_time, runtime_state.dynamic_time + fidvr.dynamic_step)
-            step_size = max(1e-6, next_time - runtime_state.dynamic_time)
-            applied_tap = apply_fidvr_controls(
-                load_specs,
-                regulator_specs,
-                capacitor_specs,
-                fidvr,
-                runtime_state,
-                next_time,
-                disturbance,
-            )
-            effective_v_pu = tx_v_pu
-            dss.Solution.StepSize(step_size)
-            dss.Text.Command(
-                f"Edit Vsource.Source pu={effective_v_pu:.6f} angle={tx_angle_deg:.6f}"
-            )
-            dss.Solution.Solve()
-            runtime_state.dynamic_time = next_time
-            stage_info = describe_fidvr_stage(
-                next_time,
-                disturbance,
-                fidvr,
-                runtime_state,
-                regulator_specs,
-                capacitor_specs,
-                applied_tap,
-            )
-            last_stage_info = finalize_stage_info(
-                stage_info,
-                tx_v_pu,
-                tx_angle_deg,
-                effective_v_pu,
-                applied_tap,
-                regulator_specs,
-                runtime_state,
-            )
-
-    runtime_state.last_stage_info = last_stage_info
-    return last_stage_info
-
-
 def solve_distribution_from_source(
     raw_tx_voltage: complex,
     load_specs: dict[str, LoadSpec],
@@ -1646,28 +1855,16 @@ def solve_distribution_from_source(
     base_mva: float,
     current_time: float,
 ):
-    if runtime_state.dynamics_enabled:
-        stage_info = run_dynamic_solution(
-            raw_tx_voltage,
-            load_specs,
-            regulator_specs,
-            capacitor_specs,
-            disturbance,
-            fidvr,
-            runtime_state,
-            current_time,
-        )
-    else:
-        stage_info = run_snapshot_solution(
-            raw_tx_voltage,
-            load_specs,
-            regulator_specs,
-            capacitor_specs,
-            disturbance,
-            fidvr,
-            runtime_state,
-            current_time,
-        )
+    stage_info = run_snapshot_solution(
+        raw_tx_voltage,
+        load_specs,
+        regulator_specs,
+        capacitor_specs,
+        disturbance,
+        fidvr,
+        runtime_state,
+        current_time,
+    )
 
     dist_bus_snapshot = get_bus_voltage_snapshot(dist_voltage_bus)
     alert_signal_info = build_alert_signal_info(
@@ -1684,6 +1881,10 @@ def solve_distribution_from_source(
     return complex(p_pu, q_pu), total_pq, dist_bus_snapshot, alert_signal_info, stage_info
 
 
+# =============================================================================
+# Runtime Setup and HELICS Loop
+# =============================================================================
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 DIST_MASTER_DSS = get_distribution_case_path(SCRIPT_DIR)
 DIST_VOLTAGE_BUS = get_distribution_voltage_bus()
@@ -1696,7 +1897,7 @@ POWER_TOPIC = get_feeder_power_topic(feeder_index)
 HELICS_UNINTERRUPTIBLE = get_env_bool("HELICS_UNINTERRUPTIBLE", False)
 disturbance = get_disturbance_config()
 fine_dt, coarse_dt, coarse_start = get_cosim_step_config(disturbance)
-fidvr = get_fidvr_config(fine_dt)
+fidvr = get_fidvr_config()
 
 if not DIST_MASTER_DSS.exists():
     raise FileNotFoundError(f"Distribution case not found: {DIST_MASTER_DSS}")
@@ -1740,21 +1941,29 @@ else:
 if fidvr.enabled:
     print(
         "Feeder FIDVR config: "
-        f"motor_model={fidvr.motor_model} "
+        "motor_model=wecc_motor_d "
         f"motors={','.join(fidvr.motor_loads)} "
-        f"trip_offsets={','.join(f'{offset:.1f}' for offset in fidvr.motor_group_trip_offsets)} "
-        f"restore_offsets={','.join(f'{offset:.1f}' for offset in fidvr.motor_group_restore_offsets)} "
         f"caps={','.join(fidvr.capacitor_names)} "
         f"regs={','.join(fidvr.regulator_names)} "
-        f"stall_v={fidvr.motor_stall_voltage_pu:.3f} pu "
-        f"trip_time={fidvr.motor_thermal_trip_time_s:.1f}s "
-        f"reconnect_v={fidvr.motor_reconnect_voltage_pu:.3f} pu "
-        f"dynamic_step={fidvr.dynamic_step:.4f}s "
+        f"wecc=[CompPF={fidvr.wecc_comp_pf:.3f},Vstall={fidvr.wecc_vstall:.3f},"
+        f"Rstall={fidvr.wecc_rstall:.3f},Xstall={fidvr.wecc_xstall:.3f},"
+        f"Tstall={fidvr.wecc_tstall:.3f},Frst={fidvr.wecc_frst:.3f},"
+        f"Vrst={fidvr.wecc_vrst:.3f},Trst={fidvr.wecc_trst:.3f},"
+        f"Tth={fidvr.wecc_tth:.1f},Th1t={fidvr.wecc_th1t:.2f},"
+        f"Th2t={fidvr.wecc_th2t:.2f},Fuvr={fidvr.wecc_fuvr:.3f}] "
+        f"thermal_restore={'on' if fidvr.enable_thermal_load_restoration else 'off'} "
+        f"thermal_restore_window=[{fidvr.thermal_restore_min_delay_s:.1f},"
+        f"{fidvr.thermal_restore_max_delay_s:.1f}]s "
+        f"thermal_restore_ramp={fidvr.thermal_restore_ramp_s:.1f}s "
+        f"thermal_restore_v={fidvr.thermal_restore_voltage_pu:.3f} pu "
+        f"thermal_restore_fraction={fidvr.thermal_restore_fraction:.2f} "
         f"reg_control={'on' if fidvr.enable_reg_control else 'off'} "
         f"cap_control={'on' if fidvr.enable_cap_control else 'off'} "
         f"reg_band=[{fidvr.regulator_low_voltage_pu:.3f}, {fidvr.regulator_high_voltage_pu:.3f}] "
         f"cap_band=[{fidvr.capacitor_on_voltage_pu:.3f}, {fidvr.capacitor_off_voltage_pu:.3f}] "
-        f"cap_init={fidvr.initial_capacitor_fraction:.2f}"
+        f"cap_init={fidvr.initial_capacitor_fraction:.2f} "
+        f"cap_lockout={'on' if fidvr.capacitor_lockout_after_open else 'off'} "
+        f"cap_kvar_scale={fidvr.capacitor_kvar_scale:.3f}"
     )
 else:
     print("Feeder FIDVR config: disabled.")
@@ -1768,7 +1977,9 @@ dss.Text.Command("set maxcontroliter=100")
 
 load_specs = collect_load_specs(DIST_LOAD_SCALE)
 regulator_specs = collect_regulator_specs(fidvr.regulator_names)
-capacitor_specs = collect_capacitor_specs(fidvr.capacitor_names)
+capacitor_specs = collect_capacitor_specs(
+    fidvr.capacitor_names, fidvr.capacitor_kvar_scale
+)
 runtime_state = FeederRuntimeState()
 
 _apply_baseline_loads(load_specs)
@@ -1779,10 +1990,25 @@ for motor in runtime_state.motor_elements:
     runtime_state.motor_group_q_scales[motor.element_name] = 1.0
     runtime_state.motor_stall_armed_since[motor.element_name] = None
     runtime_state.motor_thermal_state[motor.element_name] = 0.0
-    runtime_state.motor_trip_until[motor.element_name] = 0.0
+    runtime_state.motor_trip_reason[motor.element_name] = ""
     runtime_state.motor_reconnect_armed_since[motor.element_name] = None
-    runtime_state.motor_restore_started_at[motor.element_name] = None
     runtime_state.motor_restore_frac[motor.element_name] = 1.0
+    runtime_state.motor_contactor_fraction[motor.element_name] = 1.0
+    runtime_state.motor_uv_trip_fraction[motor.element_name] = 0.0
+    runtime_state.motor_uv1_armed_since[motor.element_name] = None
+    runtime_state.motor_uv2_armed_since[motor.element_name] = None
+    runtime_state.motor_thermal_state_a[motor.element_name] = 0.0
+    runtime_state.motor_thermal_state_b[motor.element_name] = 0.0
+    runtime_state.motor_wecc_a_stalled[motor.element_name] = False
+    runtime_state.motor_wecc_b_stalled[motor.element_name] = False
+    runtime_state.motor_wecc_b_restarted[motor.element_name] = False
+    runtime_state.motor_thermal_restore_trip_time[motor.element_name] = None
+    runtime_state.motor_thermal_restore_started_at[motor.element_name] = None
+    runtime_state.motor_thermal_restore_frac[motor.element_name] = 0.0
+    runtime_state.motor_thermal_restore_target[motor.element_name] = 0.0
+    runtime_state.motor_thermal_restore_delay_s[motor.element_name] = (
+        _thermal_restore_delay_s(motor.element_name, fidvr)
+    )
 initial_cap_fraction = (
     fidvr.initial_capacitor_fraction if fidvr.enable_cap_control else 1.0
 )
@@ -1801,8 +2027,9 @@ if runtime_state.motor_elements:
     print(
         "Feeder compressor motors: "
         f"count={len(runtime_state.motor_elements)} "
-        "topology=single-phase-per-load backend=surrogate-staged-load "
-        f"total_kw={total_motor_kw:.3f} total_kva={total_motor_kva:.3f}"
+        "topology=single-phase-per-load backend=wecc-motor-d "
+        f"total_kw={total_motor_kw:.3f} total_kva={total_motor_kva:.3f} "
+        f"Frst={fidvr.wecc_frst:.3f} Fuvr={fidvr.wecc_fuvr:.3f}"
     )
     for motor in runtime_state.motor_elements:
         print(
@@ -1815,9 +2042,12 @@ if runtime_state.motor_elements:
             f"baseline_kvar={motor.baseline_kvar:.3f} "
             f"stall_kW={motor.stall_kw:.3f} "
             f"stall_kvar={motor.stall_kvar:.3f} "
-            f"trip_offset={motor.trip_offset_s:.2f}s "
-            f"restore_offset={motor.restore_offset_s:.2f}s "
-            f"companion={motor.companion_load_name}"
+            f"Vstall={fidvr.wecc_vstall:.3f} "
+            f"Tstall={fidvr.wecc_tstall:.3f}s "
+            f"Vrst={fidvr.wecc_vrst:.3f} "
+            f"Trst={fidvr.wecc_trst:.2f}s "
+            f"thermal_restore_delay="
+            f"{runtime_state.motor_thermal_restore_delay_s.get(motor.element_name, math.nan):.2f}s"
         )
 
 PROFILE_24 = [1.0] * 24
@@ -1863,9 +2093,6 @@ tx_voltage_prev = None
     current_time=0.0,
 )
 initial_alert_voltage = float(alert_signal_info["alert_v_pu"])
-feeder_alert_detector = FidvrAlertDetector(reference_voltage_pu=initial_alert_voltage)
-feeder_alert_detector.update(0.0, initial_alert_voltage)
-feeder_alert_label = str(alert_signal_info["alert_label"])
 
 print(
     f"Feeder {feeder_index}: initial guess "
@@ -1876,6 +2103,13 @@ print(
     f"AlertSignal={alert_signal_info['alert_signal_mode']} "
     f"AlertBus={alert_signal_info['alert_bus']} "
     f"AlertV={initial_alert_voltage:.6f} pu"
+)
+log_prefault_voltage_health(
+    feeder_index,
+    fidvr,
+    dist_bus_snapshot,
+    alert_signal_info,
+    float(stage_info["tx_v_pu"]),
 )
 
 h.helicsFederateEnterInitializingMode(dist_fed)
@@ -1937,6 +2171,14 @@ else:
     raise RuntimeError(f"Feeder {feeder_index}: initialization handshake did not converge.")
 
 print(f"Feeder {feeder_index}: initialization handshake converged.")
+settled_alert_voltage = float(alert_signal_info["alert_v_pu"])
+feeder_alert_label = str(alert_signal_info["alert_label"])
+feeder_alert_detector = FidvrAlertDetector(reference_voltage_pu=settled_alert_voltage)
+feeder_alert_detector.update(0.0, settled_alert_voltage)
+print(
+    f"Feeder {feeder_index}: alert detector reference set after initialization "
+    f"AlertV={settled_alert_voltage:.6f} pu ({feeder_alert_label})."
+)
 
 # 3. Normal time loop starts here
 target_time = get_target_time()
@@ -1954,6 +2196,8 @@ while current_time < target_time:
     current_time = granted_time
     iter_count += 1
 
+    # FINE_DT controls how often this block runs during the fault window. That
+    # makes it the Motor D timer resolution.
     updated = h.helicsInputIsUpdated(sub_v)
     if updated:
         tx_voltage_last = h.helicsInputGetComplex(sub_v)
@@ -1962,13 +2206,6 @@ while current_time < target_time:
         last_loadmult = loadmult_from_time(current_time)
         dss.Text.Command(f"set loadmult={last_loadmult:.4f}")
         last_time_applied = current_time
-
-    if (
-        runtime_state.motor_elements
-        and not runtime_state.dynamics_enabled
-        and current_time + 1e-9 >= disturbance.fault_time
-    ):
-        enter_dynamic_mode_if_needed(runtime_state, fidvr, current_time)
 
     (
         s_new,
@@ -1990,7 +2227,13 @@ while current_time < target_time:
     )
     h.helicsPublicationPublishComplex(pub_s, s_new)
     regulator_tap_log = format_regulator_taps_for_log(stage_info)
-    regulator_tap_suffix = f" {regulator_tap_log}" if regulator_tap_log else ""
+    capacitor_state_log = format_capacitor_states_for_log(
+        capacitor_specs, runtime_state
+    )
+    control_state_log = " ".join(
+        token for token in (regulator_tap_log, capacitor_state_log) if token
+    )
+    control_state_suffix = f" {control_state_log}" if control_state_log else ""
 
     if fidvr.enabled and stage_info["stage"] != last_fidvr_stage:
         print(
@@ -1998,10 +2241,11 @@ while current_time < target_time:
             f"t={current_time:.3f}s stage={stage_info['stage']} "
             f"TxV={stage_info['tx_v_pu']:.6f} pu "
             f"AppliedV={stage_info['effective_v_pu']:.6f} pu "
-            f"Caps={'on' if stage_info['caps_on'] else 'off'} "
+            f"Caps={stage_info['caps_status']} "
             f"CapFrac={stage_info['cap_fraction']:.3f} "
             f"Tap={stage_info['applied_tap']:.5f} "
             f"Restore={stage_info['restore_frac']:.3f} "
+            f"ThermalRestore={stage_info.get('thermal_restore_frac', 0.0):.3f} "
             f"SlipAvg={stage_info['motor_slip_avg']:.6f} "
             f"SlipMax={stage_info['motor_slip_max']:.6f} "
             f"MotorPF={stage_info['motor_pf_avg']:.6f} "
@@ -2009,8 +2253,10 @@ while current_time < target_time:
             f"Stalled={stage_info.get('motor_stalled_groups', 0)} "
             f"Tripped={stage_info.get('motor_tripped_groups', 0)} "
             f"Restoring={stage_info.get('motor_restoring_groups', 0)} "
-            f"Dyn={'on' if runtime_state.dynamics_enabled else 'off'}"
-            f"{regulator_tap_suffix}"
+            f"ContactorTrips={stage_info.get('motor_contactor_open_groups', 0)} "
+            f"ThermalTrips={stage_info.get('motor_thermal_trip_groups', 0)} "
+            f"LockedOut={stage_info.get('motor_locked_out_groups', 0)}"
+            f"{control_state_suffix}"
         )
     last_fidvr_stage = stage_info["stage"]
     feeder_alert_label = str(alert_signal_info["alert_label"])
@@ -2049,10 +2295,11 @@ while current_time < target_time:
         f"TxV={stage_info['tx_v_pu']:.6f} "
         f"MotorP={stage_info['motor_p_scale']:.3f} "
         f"MotorQ={stage_info['motor_q_scale']:.3f} "
-        f"Caps={'on' if stage_info['caps_on'] else 'off'} "
+        f"Caps={stage_info['caps_status']} "
         f"CapFrac={stage_info['cap_fraction']:.3f} "
         f"Tap={stage_info['applied_tap']:.5f} "
         f"Restore={stage_info['restore_frac']:.3f} "
+        f"ThermalRestore={stage_info.get('thermal_restore_frac', 0.0):.3f} "
         f"SlipAvg={stage_info['motor_slip_avg']:.6f} "
         f"SlipMax={stage_info['motor_slip_max']:.6f} "
         f"MotorPF={stage_info['motor_pf_avg']:.6f} "
@@ -2060,8 +2307,10 @@ while current_time < target_time:
         f"Stalled={stage_info.get('motor_stalled_groups', 0)} "
         f"Tripped={stage_info.get('motor_tripped_groups', 0)} "
         f"Restoring={stage_info.get('motor_restoring_groups', 0)} "
-        f"Dyn={'on' if runtime_state.dynamics_enabled else 'off'}"
-        f"{regulator_tap_suffix}"
+        f"ContactorTrips={stage_info.get('motor_contactor_open_groups', 0)} "
+        f"ThermalTrips={stage_info.get('motor_thermal_trip_groups', 0)} "
+        f"LockedOut={stage_info.get('motor_locked_out_groups', 0)}"
+        f"{control_state_suffix}"
     )
 
 feeder_alerts = feeder_alert_detector.to_dataframe()

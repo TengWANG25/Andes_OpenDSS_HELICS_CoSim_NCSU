@@ -1,0 +1,4 @@
+alert_id,alert_name,criterion,threshold_pu,window_s,triggered,reference_voltage_pu,trigger_time_s,trigger_voltage_pu,trigger_voltage_norm_pu,start_time_s,end_time_s,duration_s,details
+Alert.1,Fault Alert,Voltage dip >= 0.20 pu within 3.0 cycles,0.2,0.05,False,,,,,,,,
+Alert.2,Air Conditioner Stall Alert,Voltage <= 0.90 pu for >= 5.0 s,0.9,5.0,False,,,,,,,,
+Alert.3,Overvoltage Alert,Voltage >= 1.05 pu for >= 1.0 s within 120 s of Alert.2,1.05,1.0,False,,,,,,,,

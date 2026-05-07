@@ -1,0 +1,677 @@
+ANDES 1.10.0
+Copyright (C) 2015-2026 Hantao Cui
+
+ANDES comes with ABSOLUTELY NO WARRANTY
+Case file: /home/teng/benchmark_118_10_8500_Andes_OpenDSS/ieee14_fault.xlsx
+Report time: 04/26/2026 01:36:14 PM
+
+Power flow converged in 4 iterations.
+Flat-start: No
+
+
+EIGENVALUE ANALYSIS REPORT                                    
+
+Positives         
+Zeros             
+Negatives         
+
+STATISTICS
+                     Most Associated              Real             Imag.      Damped Freq.         Frequency       Damping [%]
+
+#1                     L_y BusFreq 1             -2500                 0                 0                 0                 0
+#2                     L_y BusFreq 2             -2500                 0                 0                 0                 0
+#3                      LR_y EXST1 1           -2500.2              1768            281.38            487.36            81.649
+#4                      LR_y EXST1 1           -2500.2             -1768            281.38            487.36            81.649
+#5                   LAW2_y ESST3A 4           -4000.7                 0                 0                 0                 0
+#6                   LAW2_y ESST3A 5           -3942.2                 0                 0                 0                 0
+#7                   LAW2_y ESST3A 3           -3895.6                 0                 0                 0                 0
+#8                   LAW2_y ESST3A 2           -3836.2                 0                 0                 0                 0
+#9                      LG_y EXST1 1           -2499.9                 0                 0                 0                 0
+#10                     e2q GENROU 2           -1142.3                 0                 0                 0                 0
+#11                    LG_y ESST3A 5             -2500                 0                 0                 0                 0
+#12                    LG_y ESST3A 3             -2500                 0                 0                 0                 0
+#13                    LG_y ESST3A 4             -2500                 0                 0                 0                 0
+#14                    LG_y ESST3A 2             -2500                 0                 0                 0                 0
+#15                     e2q GENROU 2           -948.83                 0                 0                 0                 0
+#16                     e2q GENROU 4           -852.65                 0                 0                 0                 0
+#17                     e2q GENROU 5            -739.2                 0                 0                 0                 0
+#18                     e2q GENROU 5            -647.8                 0                 0                 0                 0
+#19                     e2d GENROU 2           -516.13                 0                 0                 0                 0
+#20                     e2d GENROU 4           -464.46                 0                 0                 0                 0
+#21                     e2d GENROU 5           -317.13                 0                 0                 0                 0
+#22                     e2d GENROU 5           -397.04            6.6784            1.0629              63.2            99.986
+#23                     e2d GENROU 5           -397.04           -6.6784            1.0629              63.2            99.986
+#24                    LAG_y TGOV1 1           -399.85                 0                 0                 0                 0
+#25                    LAG_y TGOV1 5            -399.9                 0                 0                 0                 0
+#26                    LAG_y TGOV1 4            -399.9                 0                 0                 0                 0
+#27                    LAG_y TGOV1 3           -99.905                 0                 0                 0                 0
+#28                    LAG_y TGOV1 2           -99.944                 0                 0                 0                 0
+#29                     e1d GENROU 1           -57.321                 0                 0                 0                 0
+#30                     e1d GENROU 3           -55.939                 0                 0                 0                 0
+#31                     e1d GENROU 4           -52.857                 0                 0                 0                 0
+#32                     e1d GENROU 5           -51.359                 0                 0                 0                 0
+#33                     e1d GENROU 5           -36.229                 0                 0                 0                 0
+#34                   omega GENROU 1          -0.10688            2.4308           0.38688           0.38725            4.3927
+#35                   omega GENROU 1          -0.10688           -2.4308           0.38688           0.38725            4.3927
+#36                   omega GENROU 3         -0.072632            1.8488           0.29425           0.29447            3.9256
+#37                   omega GENROU 3         -0.072632           -1.8488           0.29425           0.29447            3.9256
+#38                   omega GENROU 5         -0.068895            1.7748           0.28248           0.28269            3.8788
+#39                   omega GENROU 5         -0.068895           -1.7748           0.28248           0.28269            3.8788
+#40                   omega GENROU 2         -0.054582            1.6237           0.25842           0.25857            3.3596
+#41                   omega GENROU 2         -0.054582           -1.6237           0.25842           0.25857            3.3596
+#42                  LAW1_y ESST3A 4           -2.4329                 0                 0                 0                 0
+#43                  LAW1_y ESST3A 2           -2.4928                 0                 0                 0                 0
+#44                  LAW1_y ESST3A 4            -2.484                 0                 0                 0                 0
+#45                  LAW1_y ESST3A 5           -2.4781                 0                 0                 0                 0
+#46                     WF_x EXST1 1          -0.48869           0.20623          0.032823          0.084419            92.132
+#47                     WF_x EXST1 1          -0.48869          -0.20623          0.032823          0.084419            92.132
+#48                   omega GENROU 2            -0.158           0.13194          0.020999          0.032761            76.755
+#49                   omega GENROU 2            -0.158          -0.13194          0.020999          0.032761            76.755
+#50*                  delta GENROU 3       -5.9946e-13                 0                 0                 0                 0
+#51                     e1q GENROU 1         -0.037122          0.030391         0.0048368         0.0076355            77.377
+#52                     e1q GENROU 1         -0.037122         -0.030391         0.0048368         0.0076355            77.377
+#53                     e1q GENROU 5         -0.072853          0.065794          0.010471          0.015623            74.215
+#54                     e1q GENROU 5         -0.072853         -0.065794          0.010471          0.015623            74.215
+#55                     e1q GENROU 3         -0.060743          0.039369         0.0062658           0.01152            83.916
+#56                     e1q GENROU 3         -0.060743         -0.039369         0.0062658           0.01152            83.916
+#57                     e1q GENROU 4         -0.066564          0.050578         0.0080498          0.013305            79.622
+#58                     e1q GENROU 4         -0.066564         -0.050578         0.0080498          0.013305            79.622
+#59                     LL_x TGOV1 5          -0.22515                 0                 0                 0                 0
+#60                     LL_x TGOV1 4          -0.22531                 0                 0                 0                 0
+#61                     LL_x TGOV1 1          -0.22564        7.7425e-05        1.2323e-05          0.035912               100
+#62                     LL_x TGOV1 1          -0.22564       -7.7425e-05        1.2323e-05          0.035912               100
+
+EIGENVALUE DATA
+                                  #1                #2                #3                #4                #5                #6                #7
+
+delta GENROU 1                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 2                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 3                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 4                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 5                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 1                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 2                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 3                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 4                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 5                     0                 0                 0                 0                 0                 0                 0
+e1q GENROU 1                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 2                       0                 0             2e-05             2e-05                 0                 0                 0
+e1q GENROU 3                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 5                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 1                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 2                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 3                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 5                       0                 0                 0                 0                 0                 0                 0
+e2d GENROU 1                       0                 0                 0                 0                 0                 0                 0
+e2d GENROU 2                       0                 0                 0                 0                 0                 0                 0
+e2d GENROU 3                       0                 0                 0                 0                 0                 0                 0
+e2d GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e2d GENROU 5                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 1                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 2                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 3                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 5                       0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 1                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 2                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 3                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 4                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 5                      0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 1                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 2                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 3                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 4                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 5                       0                 0                 0                 0                 0                 0                 0
+LG_y EXST1 1                       0                 0             4e-05             4e-05                 0                 0                 0
+LL_x EXST1 1                       0                 0           0.46983           0.46983                 0                 0                 0
+LR_y EXST1 1                       0                 0           0.49689           0.49689                 0                 0                 0
+WF_x EXST1 1                       0                 0             9e-05             9e-05                 0                 0                 0
+LG_y ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0           0.71398
+LAW2_y ESST3A 4                    0                 0                 0                 0           0.99935                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0           0.99726                 0
+L_y BusFreq 1                0.74182                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0           0.74182                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [1/9]
+                                  #8                #9               #10               #11               #12               #13               #14
+
+delta GENROU 1                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 2                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 3                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 4                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 5                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 1                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 2                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 3                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 4                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 5                     0                 0                 0                 0                 0                 0                 0
+e1q GENROU 1                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 2                       0             5e-05                 0                 0                 0                 0                 0
+e1q GENROU 3                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 5                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 1                       0                 0           0.00137                 0                 0                 0                 0
+e1d GENROU 2                       0                 0           0.00051                 0                 0                 0                 0
+e1d GENROU 3                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 5                       0                 0                 0                 0                 0                 0                 0
+e2d GENROU 1                       0                 0           0.00483                 0                 0                 0                 0
+e2d GENROU 2                       0             1e-05           0.00548                 0                 0                 0                 0
+e2d GENROU 3                       0                 0           0.00087                 0                 0                 0                 0
+e2d GENROU 4                       0                 0           0.00184                 0                 0                 0                 0
+e2d GENROU 5                       0                 0            0.0002                 0                 0                 0                 0
+e2q GENROU 1                       0                 0           0.28124                 0                 0                 0                 0
+e2q GENROU 2                       0                 0           0.37034                 0                 0                 0                 0
+e2q GENROU 3                       0                 0           0.00033                 0                 0                 0                 0
+e2q GENROU 4                       0                 0             5e-05                 0                 0                 0                 0
+e2q GENROU 5                       0                 0           0.00013                 0                 0                 0                 0
+LAG_y TGOV1 1                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 2                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 3                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 4                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 5                      0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 1                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 2                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 3                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 4                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 5                       0                 0                 0                 0                 0                 0                 0
+LG_y EXST1 1                       0           0.98509                 0             3e-05             5e-05                 0             1e-05
+LL_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LR_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+WF_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 2                      0             2e-05                 0           0.00023             7e-05           0.00019           0.98101
+LG_y ESST3A 3                      0             4e-05                 0           0.01329           0.48426           0.18534             3e-05
+LG_y ESST3A 4                      0             1e-05                 0           0.03732           0.15933           0.48587           0.00031
+LG_y ESST3A 5                      0             1e-05                 0           0.72214            0.0448           0.01311             7e-05
+LL_x ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 2              0.71398                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [2/9]
+                                 #15               #16               #17               #18               #19               #20               #21
+
+delta GENROU 1                     0                 0                 0             1e-05                 0                 0                 0
+delta GENROU 2                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 3                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 4                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 5                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 1                     0                 0                 0             1e-05                 0                 0                 0
+omega GENROU 2                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 3                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 4                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 5                     0                 0                 0                 0                 0                 0                 0
+e1q GENROU 1                       0                 0                 0             1e-05                 0                 0                 0
+e1q GENROU 2                       0                 0                 0             1e-05            0.0001                 0           0.00047
+e1q GENROU 3                       0                 0                 0                 0                 0                 0             1e-05
+e1q GENROU 4                       0                 0                 0                 0                 0                 0             1e-05
+e1q GENROU 5                       0                 0                 0                 0                 0                 0             1e-05
+e1d GENROU 1                 0.00082                 0             9e-05           0.00016           0.00031           0.00015           0.00081
+e1d GENROU 2                 0.00176             2e-05           0.00075           0.00014           0.00035             3e-05           0.00297
+e1d GENROU 3                 0.00022           0.00082           0.00203           0.00025           0.00064             6e-05           0.00362
+e1d GENROU 4                 0.00061           0.00448           0.00036           0.00074           0.00067           0.00048           0.00316
+e1d GENROU 5                       0           0.00012            0.0028           0.00425           0.00038             3e-05           0.00253
+e2d GENROU 1                 0.00284           0.00222           0.06168           0.31502           0.01169           0.02096           0.04078
+e2d GENROU 2                 0.00633             1e-05            0.0132           0.06263           0.28921           0.01214           0.11674
+e2d GENROU 3                 0.00045           0.00028             4e-05           0.00086           0.05367           0.25198           0.16303
+e2d GENROU 4                 0.00195           0.00326             0.002           0.00665           0.27038           0.42424           0.19301
+e2d GENROU 5                 0.00019             6e-05                 0             4e-05           0.00015           0.01972           0.19675
+e2q GENROU 1                 0.10489           0.00083           0.01832           0.00216           0.00882           0.00042           0.00386
+e2q GENROU 2                 0.40753           0.00274           0.05571           0.00197           0.00711           0.00048           0.04866
+e2q GENROU 3                 0.19758           0.29738           0.31753            0.0198           0.01013           0.00551           0.05091
+e2q GENROU 4                 0.14344            0.6505           0.02875           0.03686           0.00447           0.00316           0.04568
+e2q GENROU 5                 0.00146           0.04042           0.43587           0.35385           0.01226           0.00117             0.044
+LAG_y TGOV1 1                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 2                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 3                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 4                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 5                      0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 1                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 2                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 3                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 4                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 5                       0                 0                 0                 0                 0                 0                 0
+LG_y EXST1 1                       0                 0                 0                 0             3e-05                 0             7e-05
+LL_x EXST1 1                       0                 0                 0                 0             1e-05                 0             4e-05
+LR_y EXST1 1                       0                 0                 0                 0             1e-05                 0             4e-05
+WF_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [3/9]
+                                 #22               #23               #24               #25               #26               #27               #28
+
+delta GENROU 1                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 2                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 3                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 4                     0                 0                 0                 0                 0                 0                 0
+delta GENROU 5                     0                 0                 0                 0                 0                 0                 0
+omega GENROU 1                     0                 0           0.00037                 0                 0                 0                 0
+omega GENROU 2                     0                 0                 0                 0                 0                 0           0.00056
+omega GENROU 3                     0                 0                 0                 0                 0           0.00095                 0
+omega GENROU 4                     0                 0                 0           0.00014           0.00038                 0                 0
+omega GENROU 5                     0                 0                 0           0.00038           0.00014                 0                 0
+e1q GENROU 1                   2e-05             2e-05                 0                 0                 0                 0                 0
+e1q GENROU 2                   3e-05             3e-05                 0                 0                 0                 0                 0
+e1q GENROU 3                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e1q GENROU 5                       0                 0                 0                 0                 0                 0                 0
+e1d GENROU 1                 0.00703           0.00703                 0                 0                 0                 0                 0
+e1d GENROU 2                 0.01035           0.01035                 0                 0                 0                 0                 0
+e1d GENROU 3                 0.01035           0.01035                 0                 0                 0                 0                 0
+e1d GENROU 4                 0.00778           0.00778                 0                 0                 0                 0                 0
+e1d GENROU 5                 0.00574           0.00574                 0                 0                 0                 0                 0
+e2d GENROU 1                 0.19991           0.19991                 0                 0                 0                 0                 0
+e2d GENROU 2                 0.01259           0.01259                 0                 0                 0                 0                 0
+e2d GENROU 3                 0.05188           0.05188                 0                 0                 0                 0                 0
+e2d GENROU 4                 0.06858           0.06858                 0                 0                 0                 0                 0
+e2d GENROU 5                 0.38634           0.38634                 0                 0                 0                 0                 0
+e2q GENROU 1                  0.0296            0.0296                 0                 0                 0                 0                 0
+e2q GENROU 2                 0.12817           0.12817                 0                 0                 0                 0                 0
+e2q GENROU 3                 0.12993           0.12993                 0                 0                 0                 0                 0
+e2q GENROU 4                 0.10925           0.10925                 0                 0                 0                 0                 0
+e2q GENROU 5                 0.13679           0.13679                 0                 0                 0                 0                 0
+LAG_y TGOV1 1                      0                 0           0.99811                 0                 0                 0                 0
+LAG_y TGOV1 2                      0                 0                 0                 0                 0                 0            0.9988
+LAG_y TGOV1 3                      0                 0                 0                 0                 0           0.99961                 0
+LAG_y TGOV1 4                      0                 0                 0           0.56557            1.5483                 0                 0
+LAG_y TGOV1 5                      0                 0                 0            1.5483           0.56557                 0                 0
+LL_x TGOV1 1                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 2                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 3                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 4                       0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 5                       0                 0                 0                 0                 0                 0                 0
+LG_y EXST1 1                   1e-05             1e-05                 0                 0                 0                 0                 0
+LL_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LR_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+WF_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [4/9]
+                                 #29               #30               #31               #32               #33               #34               #35
+
+delta GENROU 1               0.00015             2e-05                 0                 0           0.00022           0.42425           0.42425
+delta GENROU 2               0.00011           0.00012             2e-05             2e-05                 0           0.01874           0.01874
+delta GENROU 3                     0           0.00027             7e-05             5e-05                 0           0.02912           0.02912
+delta GENROU 4                     0                 0           0.00041             2e-05                 0           0.01667           0.01667
+delta GENROU 5                     0                 0                 0           0.00034                 0           0.00874           0.00874
+omega GENROU 1               0.00015             2e-05                 0                 0           0.00022           0.42743           0.42743
+omega GENROU 2               0.00011           0.00012             2e-05             2e-05                 0           0.01881           0.01881
+omega GENROU 3                     0           0.00027             7e-05             5e-05                 0            0.0293            0.0293
+omega GENROU 4                     0                 0           0.00041             2e-05                 0           0.01675           0.01675
+omega GENROU 5                     0                 0                 0           0.00034                 0           0.00878           0.00878
+e1q GENROU 1                       0                 0                 0                 0             9e-05           0.00743           0.00743
+e1q GENROU 2                 0.00014             4e-05             1e-05             2e-05             1e-05           0.00013           0.00013
+e1q GENROU 3                       0             1e-05                 0                 0             1e-05           0.00018           0.00018
+e1q GENROU 4                       0                 0             1e-05                 0             1e-05             4e-05             4e-05
+e1q GENROU 5                       0                 0                 0             1e-05             1e-05             2e-05             2e-05
+e1d GENROU 1                 0.68953           0.12124           0.04738           0.02967           0.09365           0.00102           0.00102
+e1d GENROU 2                 0.30165           0.34813           0.06651           0.08168           0.18916           0.00092           0.00092
+e1d GENROU 3                 0.00044           0.52128           0.15574           0.11237           0.19823           0.00111           0.00111
+e1d GENROU 4                 0.00013           0.00468           0.71618           0.04062           0.22299            0.0007            0.0007
+e1d GENROU 5                 0.00023           0.00086           0.00727           0.71678           0.24383           0.00042           0.00042
+e2d GENROU 1                 0.00022             3e-05                 0           0.00017           0.00379           0.00166           0.00166
+e2d GENROU 2                  0.0007           0.00014             3e-05             1e-05             1e-05                 0                 0
+e2d GENROU 3                 0.00016           0.00023             4e-05             2e-05            0.0001             1e-05             1e-05
+e2d GENROU 4                 0.00021             4e-05           0.00067             1e-05           0.00017                 0                 0
+e2d GENROU 5                   7e-05             1e-05             1e-05             4e-05           0.00015                 0                 0
+e2q GENROU 1                   0.001           0.00026           0.00022           0.00016            0.0023            0.0001            0.0001
+e2q GENROU 2                 0.00043            0.0011           0.00049           0.00072           0.00892           0.00023           0.00023
+e2q GENROU 3                       0           0.00137           0.00095           0.00087           0.00805           0.00024           0.00024
+e2q GENROU 4                   1e-05             1e-05           0.00414           0.00033           0.00998           0.00017           0.00017
+e2q GENROU 5                       0                 0             5e-05           0.00557           0.00999             9e-05             9e-05
+LAG_y TGOV1 1                      0                 0                 0                 0                 0           0.00016           0.00016
+LAG_y TGOV1 2                      0                 0                 0                 0                 0             1e-05             1e-05
+LAG_y TGOV1 3                      0                 0                 0                 0                 0             3e-05             3e-05
+LAG_y TGOV1 4                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 5                      0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 1                       0                 0                 0                 0                 0           0.00264           0.00264
+LL_x TGOV1 2                       0                 0                 0                 0                 0             4e-05             4e-05
+LL_x TGOV1 3                       0                 0                 0                 0                 0           0.00012           0.00012
+LL_x TGOV1 4                       0                 0                 0                 0                 0             7e-05             7e-05
+LL_x TGOV1 5                       0                 0                 0                 0                 0             3e-05             3e-05
+LG_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LL_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LR_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+WF_x EXST1 1                       0                 0                 0                 0                 0             1e-05             1e-05
+LG_y ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 2                      0                 0                 0                 0                 0             5e-05             5e-05
+LL_x ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LAW1_y ESST3A 2                    0                 0                 0                 0                 0           0.00045           0.00045
+LAW1_y ESST3A 3                    0                 0                 0                 0                 0             4e-05             4e-05
+LAW1_y ESST3A 4                    0                 0                 0                 0                 0             1e-05             1e-05
+LAW1_y ESST3A 5                    0                 0                 0                 0                 0             1e-05             1e-05
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [5/9]
+                                 #36               #37               #38               #39               #40               #41               #42
+
+delta GENROU 1               0.00083           0.00083           0.00261           0.00261             9e-05             9e-05           0.00074
+delta GENROU 2               0.00672           0.00672           0.04704           0.04704           0.26358           0.26358             2e-05
+delta GENROU 3               0.26991           0.26991           0.10456           0.10456           0.00415           0.00415           0.00012
+delta GENROU 4                 0.219             0.219           0.14548           0.14548           0.03171           0.03171           0.00019
+delta GENROU 5               0.00038           0.00038           0.19859           0.19859           0.19893           0.19893             7e-05
+omega GENROU 1               0.00084           0.00084           0.00264           0.00264             9e-05             9e-05           0.00078
+omega GENROU 2               0.00676           0.00676           0.04731           0.04731           0.26528           0.26528             2e-05
+omega GENROU 3               0.27226           0.27226           0.10552           0.10552           0.00419           0.00419           0.00013
+omega GENROU 4               0.22068           0.22068           0.14667           0.14667           0.03201           0.03201            0.0002
+omega GENROU 5               0.00039           0.00039           0.20026           0.20026           0.20081           0.20081             8e-05
+e1q GENROU 1                   1e-05             1e-05             5e-05             5e-05             1e-05             1e-05           0.00399
+e1q GENROU 2                 0.00017           0.00017             4e-05             4e-05           0.00046           0.00046           0.00132
+e1q GENROU 3                 0.00287           0.00287           0.00119           0.00119             7e-05             7e-05           0.00691
+e1q GENROU 4                 0.00114           0.00114           0.00086           0.00086           0.00023           0.00023           0.00911
+e1q GENROU 5                       0                 0           0.00181           0.00181             0.002             0.002           0.00909
+e1d GENROU 1                       0                 0                 0                 0                 0                 0             2e-05
+e1d GENROU 2                 0.00013           0.00013            0.0008            0.0008           0.00334           0.00334             1e-05
+e1d GENROU 3                 0.00355           0.00355           0.00119           0.00119             4e-05             4e-05             1e-05
+e1d GENROU 4                 0.00339           0.00339           0.00194           0.00194           0.00031           0.00031             1e-05
+e1d GENROU 5                       0                 0           0.00281           0.00281           0.00207           0.00207             2e-05
+e2d GENROU 1                       0                 0                 0                 0                 0                 0             2e-05
+e2d GENROU 2                       0                 0             2e-05             2e-05            0.0001            0.0001             1e-05
+e2d GENROU 3                 0.00016           0.00016             5e-05             5e-05                 0                 0             1e-05
+e2d GENROU 4                 0.00013           0.00013             9e-05             9e-05             2e-05             2e-05             4e-05
+e2d GENROU 5                       0                 0             9e-05             9e-05             7e-05             7e-05             2e-05
+e2q GENROU 1                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 2                   3e-05             3e-05           0.00019           0.00019           0.00081           0.00081                 0
+e2q GENROU 3                 0.00073           0.00073           0.00025           0.00025             1e-05             1e-05                 0
+e2q GENROU 4                 0.00081           0.00081           0.00046           0.00046             8e-05             8e-05                 0
+e2q GENROU 5                       0                 0           0.00059           0.00059           0.00043           0.00043                 0
+LAG_y TGOV1 1                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 2                      0                 0             3e-05             3e-05           0.00015           0.00015                 0
+LAG_y TGOV1 3                0.00026           0.00026            0.0001            0.0001                 0                 0                 0
+LAG_y TGOV1 4                  5e-05             5e-05             4e-05             4e-05             1e-05             1e-05                 0
+LAG_y TGOV1 5                      0                 0             5e-05             5e-05             5e-05             5e-05                 0
+LL_x TGOV1 1                   1e-05             1e-05             3e-05             3e-05                 0                 0             1e-05
+LL_x TGOV1 2                   3e-05             3e-05           0.00021           0.00021           0.00138           0.00138                 0
+LL_x TGOV1 3                 0.00185           0.00185           0.00078           0.00078             4e-05             4e-05                 0
+LL_x TGOV1 4                  0.0015            0.0015           0.00108           0.00108           0.00028           0.00028                 0
+LL_x TGOV1 5                       0                 0           0.00148           0.00148           0.00176           0.00176                 0
+LG_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LL_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LR_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+WF_x EXST1 1                   2e-05             2e-05             5e-05             5e-05           0.00022           0.00022           0.00041
+LG_y ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 4                      0                 0                 0                 0                 0                 0             1e-05
+LG_y ESST3A 5                      0                 0                 0                 0                 0                 0             1e-05
+LL_x ESST3A 2                      0                 0                 0                 0                 0                 0           0.00022
+LL_x ESST3A 3                  1e-05             1e-05             1e-05             1e-05                 0                 0           0.00049
+LL_x ESST3A 4                  1e-05             1e-05             1e-05             1e-05             1e-05             1e-05           0.00058
+LL_x ESST3A 5                      0                 0                 0                 0             1e-05             1e-05           0.00058
+LAW1_y ESST3A 2                    0                 0             1e-05             1e-05             1e-05             1e-05           0.09848
+LAW1_y ESST3A 3                5e-05             5e-05             6e-05             6e-05             1e-05             1e-05           0.16871
+LAW1_y ESST3A 4                9e-05             9e-05             7e-05             7e-05             3e-05             3e-05           0.26608
+LAW1_y ESST3A 5                    0                 0             3e-05             3e-05             7e-05             7e-05           0.26608
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                    0                 0                 0                 0                 0                 0             1e-05
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0                 0             1e-05
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [6/9]
+                                 #43               #44               #45               #46               #47               #48               #49
+
+delta GENROU 1                 3e-05             3e-05             6e-05            0.0109            0.0109            0.0457            0.0457
+delta GENROU 2                     0                 0                 0           0.00138           0.00138           0.06795           0.06795
+delta GENROU 3                 4e-05             7e-05             3e-05           0.00316           0.00316            0.0077            0.0077
+delta GENROU 4                     0             7e-05             2e-05           0.00617           0.00617            0.0073            0.0073
+delta GENROU 5                     0                 0             3e-05            0.0021            0.0021            0.0075            0.0075
+omega GENROU 1                 3e-05             3e-05             7e-05           0.01288           0.01288           0.06777           0.06777
+omega GENROU 2                 1e-05                 0                 0           0.00147           0.00147           0.18608           0.18608
+omega GENROU 3                 5e-05             7e-05             3e-05           0.00351           0.00351           0.10562           0.10562
+omega GENROU 4                     0             7e-05             2e-05           0.00685           0.00685           0.10186           0.10186
+omega GENROU 5                     0                 0             3e-05           0.00233           0.00233           0.10468           0.10468
+e1q GENROU 1                 0.00219           0.00044           0.00051           0.01408           0.01408             0.003             0.003
+e1q GENROU 2                   2e-05             3e-05             5e-05           0.65086           0.65086           0.00568           0.00568
+e1q GENROU 3                 0.00074           0.00248           0.00132           0.01622           0.01622           0.00053           0.00053
+e1q GENROU 4                   4e-05           0.00374           0.00107           0.01231           0.01231           0.00054           0.00054
+e1q GENROU 5                       0             1e-05            0.0063           0.00887           0.00887           0.00055           0.00055
+e1d GENROU 1                   2e-05             1e-05             1e-05           0.00011           0.00011             1e-05             1e-05
+e1d GENROU 2                       0                 0                 0           0.00037           0.00037             2e-05             2e-05
+e1d GENROU 3                       0             1e-05                 0           0.00014           0.00014                 0                 0
+e1d GENROU 4                       0                 0                 0             7e-05             7e-05                 0                 0
+e1d GENROU 5                       0                 0             3e-05           0.00011           0.00011                 0                 0
+e2d GENROU 1                   1e-05                 0                 0             5e-05             5e-05                 0                 0
+e2d GENROU 2                       0                 0                 0           0.00022           0.00022                 0                 0
+e2d GENROU 3                       0                 0                 0             3e-05             3e-05                 0                 0
+e2d GENROU 4                       0             1e-05                 0             5e-05             5e-05                 0                 0
+e2d GENROU 5                       0                 0             1e-05             1e-05             1e-05                 0                 0
+e2q GENROU 1                       0                 0                 0             3e-05             3e-05                 0                 0
+e2q GENROU 2                       0                 0                 0             5e-05             5e-05                 0                 0
+e2q GENROU 3                       0                 0                 0             4e-05             4e-05                 0                 0
+e2q GENROU 4                       0                 0                 0             2e-05             2e-05                 0                 0
+e2q GENROU 5                       0                 0                 0             3e-05             3e-05                 0                 0
+LAG_y TGOV1 1                      0                 0                 0                 0                 0             6e-05             6e-05
+LAG_y TGOV1 2                      0                 0                 0                 0                 0           0.00024           0.00024
+LAG_y TGOV1 3                      0                 0                 0                 0                 0           0.00023           0.00023
+LAG_y TGOV1 4                      0                 0                 0                 0                 0             6e-05             6e-05
+LAG_y TGOV1 5                      0                 0                 0                 0                 0             6e-05             6e-05
+LL_x TGOV1 1                       0                 0                 0           0.00424           0.00424           0.11198           0.11198
+LL_x TGOV1 2                       0                 0                 0           0.00018           0.00018           0.11657           0.11657
+LL_x TGOV1 3                       0                 0                 0           0.00074           0.00074           0.11156           0.11156
+LL_x TGOV1 4                       0                 0                 0           0.00144           0.00144            0.1075            0.1075
+LL_x TGOV1 5                       0                 0                 0           0.00049           0.00049           0.11068           0.11068
+LG_y EXST1 1                       0                 0                 0           0.00012           0.00012                 0                 0
+LL_x EXST1 1                       0                 0                 0           0.00015           0.00015                 0                 0
+LR_y EXST1 1                       0                 0                 0           0.00016           0.00016                 0                 0
+WF_x EXST1 1                   1e-05             1e-05             1e-05            0.6538            0.6538           0.00053           0.00053
+LG_y ESST3A 2                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 5                      0                 0                 0                 0                 0                 0                 0
+LL_x ESST3A 2                0.00012             2e-05             3e-05           0.00602           0.00602           0.00012           0.00012
+LL_x ESST3A 3                  5e-05           0.00017             9e-05           0.00794           0.00794           0.00022           0.00022
+LL_x ESST3A 4                      0           0.00023             7e-05           0.00533           0.00533           0.00025           0.00025
+LL_x ESST3A 5                      0                 0            0.0004            0.0036            0.0036           0.00016           0.00016
+LAW1_y ESST3A 2                0.513           0.04616           0.03913           0.00289           0.00289             1e-05             1e-05
+LAW1_y ESST3A 3              0.17102           0.25897           0.09971           0.00297           0.00297             1e-05             1e-05
+LAW1_y ESST3A 4              0.01021            0.4663           0.09703           0.00264           0.00264             2e-05             2e-05
+LAW1_y ESST3A 5              0.00059           0.00166           0.57252           0.00179           0.00179             1e-05             1e-05
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [7/9]
+                                #50*               #51               #52               #53               #54               #55               #56
+
+delta GENROU 1               0.20203           0.00253           0.00253           0.00476           0.00476           0.00043           0.00043
+delta GENROU 2               0.19765            0.0005            0.0005           0.00378           0.00378           0.00073           0.00073
+delta GENROU 3               0.20225            0.0008            0.0008           0.00189           0.00189           0.00309           0.00309
+delta GENROU 4               0.19966           0.00053           0.00053           0.00151           0.00151           0.00158           0.00158
+delta GENROU 5               0.19839           0.00051           0.00051           0.00844           0.00844           0.00096           0.00096
+omega GENROU 1                     0            0.0004            0.0004           0.00167           0.00167            0.0001            0.0001
+omega GENROU 2                     0           0.00026           0.00026           0.00537           0.00537           0.00067           0.00067
+omega GENROU 3                     0           0.00021           0.00021           0.00121           0.00121           0.00132           0.00132
+omega GENROU 4                     0           0.00014           0.00014           0.00097           0.00097           0.00067           0.00067
+omega GENROU 5                     0           0.00013           0.00013           0.00541           0.00541           0.00041           0.00041
+e1q GENROU 1                       0           0.48143           0.48143           0.00906           0.00906           0.00718           0.00718
+e1q GENROU 2                       0           0.05502           0.05502           0.07716           0.07716           0.04584           0.04584
+e1q GENROU 3                       0           0.01433           0.01433           0.03187           0.03187           0.51596           0.51596
+e1q GENROU 4                       0           0.00328           0.00328           0.17354           0.17354           0.04513           0.04513
+e1q GENROU 5                       0           0.00067           0.00067           0.43481           0.43481           0.00221           0.00221
+e1d GENROU 1                       0           0.00013           0.00013                 0                 0                 0                 0
+e1d GENROU 2                       0                 0                 0             1e-05             1e-05             1e-05             1e-05
+e1d GENROU 3                       0                 0                 0             1e-05             1e-05           0.00013           0.00013
+e1d GENROU 4                       0                 0                 0             2e-05             2e-05             1e-05             1e-05
+e1d GENROU 5                       0                 0                 0           0.00013           0.00013                 0                 0
+e2d GENROU 1                       0             6e-05             6e-05                 0                 0                 0                 0
+e2d GENROU 2                       0                 0                 0                 0                 0                 0                 0
+e2d GENROU 3                       0                 0                 0                 0                 0             2e-05             2e-05
+e2d GENROU 4                       0                 0                 0             2e-05             2e-05                 0                 0
+e2d GENROU 5                       0                 0                 0             2e-05             2e-05                 0                 0
+e2q GENROU 1                       0             1e-05             1e-05                 0                 0                 0                 0
+e2q GENROU 2                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 3                       0                 0                 0                 0                 0             2e-05             2e-05
+e2q GENROU 4                       0                 0                 0                 0                 0                 0                 0
+e2q GENROU 5                       0                 0                 0             2e-05             2e-05                 0                 0
+LAG_y TGOV1 1                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 2                      0                 0                 0             1e-05             1e-05                 0                 0
+LAG_y TGOV1 3                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 4                      0                 0                 0                 0                 0                 0                 0
+LAG_y TGOV1 5                      0                 0                 0                 0                 0                 0                 0
+LL_x TGOV1 1                       0            0.0004            0.0004           0.00217           0.00217           0.00013           0.00013
+LL_x TGOV1 2                       0            0.0001            0.0001           0.00266           0.00266           0.00032           0.00032
+LL_x TGOV1 3                       0           0.00013           0.00013           0.00101           0.00101           0.00106           0.00106
+LL_x TGOV1 4                       0             9e-05             9e-05           0.00081           0.00081           0.00054           0.00054
+LL_x TGOV1 5                       0             9e-05             9e-05           0.00452           0.00452           0.00033           0.00033
+LG_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LL_x EXST1 1                       0                 0                 0                 0                 0                 0                 0
+LR_y EXST1 1                       0                 0                 0                 0                 0                 0                 0
+WF_x EXST1 1                       0           0.00159           0.00159           0.00303           0.00303           0.00117           0.00117
+LG_y ESST3A 2                      0             1e-05             1e-05                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0             1e-05             1e-05
+LG_y ESST3A 4                      0                 0                 0                 0                 0                 0                 0
+LG_y ESST3A 5                      0                 0                 0             1e-05             1e-05                 0                 0
+LL_x ESST3A 2                      0           0.39594           0.39594           0.00663           0.00663            0.0071            0.0071
+LL_x ESST3A 3                      0           0.01991           0.01991           0.03006           0.03006           0.50815           0.50815
+LL_x ESST3A 4                      0           0.00484           0.00484           0.15771           0.15771           0.04278           0.04278
+LL_x ESST3A 5                      0           0.00077           0.00077           0.39891           0.39891           0.00213           0.00213
+LAW1_y ESST3A 2                    0            0.0045            0.0045           0.00016           0.00016            0.0001            0.0001
+LAW1_y ESST3A 3                    0           0.00018           0.00018           0.00056           0.00056           0.00579           0.00579
+LAW1_y ESST3A 4                    0             6e-05             6e-05           0.00391           0.00391           0.00065           0.00065
+LAW1_y ESST3A 5                    0             1e-05             1e-05           0.00989           0.00989             3e-05             3e-05
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                    0                 0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0             1e-05             1e-05                 0                 0
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0                 0
+
+PARTICIPATION FACTORS [8/9]
+                                 #57               #58               #59               #60               #61               #62
+
+delta GENROU 1               0.00129           0.00129             5e-05                 0           0.00277           0.00277
+delta GENROU 2               0.00146           0.00146           0.00027           0.00011           0.00267           0.00267
+delta GENROU 3               0.00152           0.00152           0.00072           0.00215           0.00087           0.00087
+delta GENROU 4               0.00469           0.00469           0.00051           0.00408           0.00022           0.00022
+delta GENROU 5               0.00619           0.00619           0.00548             1e-05             6e-05             6e-05
+omega GENROU 1               0.00037           0.00037                 0                 0             2e-05             2e-05
+omega GENROU 2               0.00164           0.00164             1e-05                 0             5e-05             5e-05
+omega GENROU 3               0.00077           0.00077             1e-05             3e-05             1e-05             1e-05
+omega GENROU 4               0.00239           0.00239             1e-05             6e-05                 0                 0
+omega GENROU 5               0.00316           0.00316             8e-05                 0                 0                 0
+e1q GENROU 1                 0.00533           0.00533             1e-05             2e-05           0.00112           0.00112
+e1q GENROU 2                 0.03188           0.03188             3e-05             6e-05           0.00085           0.00085
+e1q GENROU 3                 0.03448           0.03448             6e-05           0.00027           0.00058           0.00058
+e1q GENROU 4                 0.43155           0.43155             1e-05           0.00052           0.00018           0.00018
+e1q GENROU 5                 0.18845           0.18845           0.00101                 0             9e-05             9e-05
+e1d GENROU 1                       0                 0                 0                 0                 0                 0
+e1d GENROU 2                       0                 0                 0                 0                 0                 0
+e1d GENROU 3                   1e-05             1e-05                 0                 0                 0                 0
+e1d GENROU 4                   5e-05             5e-05                 0             1e-05                 0                 0
+e1d GENROU 5                   6e-05             6e-05             1e-05                 0                 0                 0
+e2d GENROU 1                       0                 0                 0                 0                 0                 0
+e2d GENROU 2                       0                 0                 0                 0                 0                 0
+e2d GENROU 3                       0                 0                 0                 0                 0                 0
+e2d GENROU 4                   3e-05             3e-05                 0                 0                 0                 0
+e2d GENROU 5                   1e-05             1e-05                 0                 0                 0                 0
+e2q GENROU 1                       0                 0                 0                 0                 0                 0
+e2q GENROU 2                       0                 0                 0                 0                 0                 0
+e2q GENROU 3                       0                 0                 0                 0                 0                 0
+e2q GENROU 4                   1e-05             1e-05                 0                 0                 0                 0
+e2q GENROU 5                   1e-05             1e-05                 0                 0                 0                 0
+LAG_y TGOV1 1                      0                 0                 0                 0                 0                 0
+LAG_y TGOV1 2                      0                 0                 0                 0             1e-05             1e-05
+LAG_y TGOV1 3                      0                 0                 0                 0                 0                 0
+LAG_y TGOV1 4                      0                 0                 0                 0                 0                 0
+LAG_y TGOV1 5                      0                 0                 0                 0                 0                 0
+LL_x TGOV1 1                 0.00048           0.00048           0.00658           0.00073           0.55095           0.55095
+LL_x TGOV1 2                 0.00081           0.00081            0.0377           0.01751            0.5361            0.5361
+LL_x TGOV1 3                 0.00064           0.00064           0.10017           0.33143           0.17397           0.17397
+LL_x TGOV1 4                 0.00198           0.00198           0.07061           0.62742           0.04472           0.04472
+LL_x TGOV1 5                 0.00262           0.00262           0.76185           0.00103           0.01194           0.01194
+LG_y EXST1 1                       0                 0                 0                 0                 0                 0
+LL_x EXST1 1                       0                 0                 0                 0                 0                 0
+LR_y EXST1 1                       0                 0                 0                 0                 0                 0
+WF_x EXST1 1                 0.00097           0.00097                 0             1e-05            0.0001            0.0001
+LG_y ESST3A 2                      0                 0                 0                 0                 0                 0
+LG_y ESST3A 3                      0                 0                 0                 0                 0                 0
+LG_y ESST3A 4                  1e-05             1e-05                 0                 0                 0                 0
+LG_y ESST3A 5                      0                 0                 0                 0                 0                 0
+LL_x ESST3A 2                0.00441           0.00441                 0                 0            0.0001            0.0001
+LL_x ESST3A 3                0.03324           0.03324             1e-05             4e-05             6e-05             6e-05
+LL_x ESST3A 4                0.39547           0.39547                 0            0.0001             2e-05             2e-05
+LL_x ESST3A 5                0.17044           0.17044           0.00015                 0             1e-05             1e-05
+LAW1_y ESST3A 2                8e-05             8e-05                 0                 0                 0                 0
+LAW1_y ESST3A 3              0.00048           0.00048                 0                 0                 0                 0
+LAW1_y ESST3A 4              0.00758           0.00758                 0                 0                 0                 0
+LAW1_y ESST3A 5              0.00327           0.00327                 0                 0                 0                 0
+LAW2_y ESST3A 2                    0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 3                    0                 0                 0                 0                 0                 0
+LAW2_y ESST3A 4                1e-05             1e-05                 0                 0                 0                 0
+LAW2_y ESST3A 5                    0                 0                 0                 0                 0                 0
+L_y BusFreq 1                      0                 0                 0                 0                 0                 0
+L_y BusFreq 2                      0                 0                 0                 0                 0                 0
+

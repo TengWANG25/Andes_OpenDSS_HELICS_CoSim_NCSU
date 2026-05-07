@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from fidvr_alerts import (
@@ -56,10 +57,11 @@ FIDVR_RE = re.compile(
     r"TxV=(?P<tx_v_pu>[0-9.+\-eE]+)\s+"
     r"MotorP=(?P<motor_p_scale>[0-9.+\-eE]+)\s+"
     r"MotorQ=(?P<motor_q_scale>[0-9.+\-eE]+)\s+"
-    r"Caps=(?P<caps_on>on|off)\s+"
+    r"Caps=(?P<caps_status>on|partial|off)\s+"
     r"(?:CapFrac=(?P<cap_fraction>[0-9.+\-eE]+)\s+)?"
     r"Tap=(?P<tap_pu>[0-9.+\-eE]+)\s+"
     r"Restore=(?P<restore_frac>[0-9.+\-eE]+)"
+    r"(?:\s+ThermalRestore=(?P<thermal_restore_frac>[0-9.+\-eE]+))?"
 )
 MOTOR_DIAG_RE = re.compile(
     r"SlipAvg=(?P<motor_slip_avg>[0-9.+\-eE]+|nan)\s+"
@@ -70,10 +72,14 @@ MOTOR_STATE_RE = re.compile(
     r"Running=(?P<motor_running_groups>\d+)\s+"
     r"Stalled=(?P<motor_stalled_groups>\d+)\s+"
     r"Tripped=(?P<motor_tripped_groups>\d+)\s+"
-    r"Restoring=(?P<motor_restoring_groups>\d+)\s+"
-    r"Dyn=(?P<dynamics_enabled>on|off)"
+    r"Restoring=(?P<motor_restoring_groups>\d+)"
+    r"(?:\s+Dyn=(?P<dynamics_enabled>on|off))?"
 )
 REG_TAP_RE = re.compile(r"Tap(?P<name>[A-Za-z0-9_]+)=(?P<value>[0-9.+\-eE]+)")
+CAP_STATE_RE = re.compile(r"\b(?P<name>Cap[0-9][A-Za-z0-9_]*)=(?P<state>on|off)\b")
+CAP_VOLTAGE_RE = re.compile(r"\b(?P<name>Cap[0-9][A-Za-z0-9_]*)V=(?P<value>[0-9.+\-eE]+)")
+CAP_LOCK_RE = re.compile(r"\b(?P<name>Cap[0-9][A-Za-z0-9_]*)Lock=(?P<value>[01])\b")
+CAP_ACTION_RE = re.compile(r"\b(?P<name>Cap[0-9][A-Za-z0-9_]*)Action=(?P<action>[A-Za-z_]+)\b")
 
 FIDVR_STAGE_LABELS = {
     "FAULT_ACTIVE": "Fault",
@@ -139,6 +145,26 @@ def _set_voltage_limits(ax, series_list):
     vmax = values.max()
     pad = max(0.002, 0.1 * max(vmax - vmin, 0.01))
     ax.set_ylim(vmin - pad, vmax + pad)
+
+
+def _apply_manual_xlim(ax_or_axes, x_limits):
+    if x_limits is None:
+        return
+    if isinstance(ax_or_axes, np.ndarray):
+        for axis in ax_or_axes.flat:
+            axis.set_xlim(*x_limits)
+        return
+    if isinstance(ax_or_axes, (list, tuple)):
+        for axis in ax_or_axes:
+            axis.set_xlim(*x_limits)
+        return
+    ax_or_axes.set_xlim(*x_limits)
+
+
+def _apply_manual_voltage_ylim(ax, voltage_y_limits):
+    if voltage_y_limits is None:
+        return
+    ax.set_ylim(*voltage_y_limits)
 
 
 def _load_disturbance_intervals(log_path: Path):
@@ -239,12 +265,27 @@ def _load_fault_intervals(log_path: Path):
     return fault_bus, intervals
 
 
+def _fidvr_stage_series_with_cap_actions(by_t: pd.DataFrame):
+    if "fidvr_stage" not in by_t.columns:
+        return pd.Series(dtype=object)
+
+    stage_series = by_t["fidvr_stage"].fillna("DISABLED")
+    if "cap_fraction" in by_t.columns:
+        cap_fraction = pd.to_numeric(by_t["cap_fraction"], errors="coerce")
+        cap_action_mask = (
+            cap_fraction.lt(0.99)
+            & ~stage_series.isin(["DISABLED", "BASELINE", "FAULT_ACTIVE"])
+        )
+        stage_series = stage_series.mask(cap_action_mask, "CAPS_OFF")
+    return stage_series
+
+
 def _extract_fidvr_stage_intervals(by_t: pd.DataFrame):
     if "fidvr_stage" not in by_t.columns:
         return []
 
     neutral_stages = {"DISABLED", "BASELINE", "RECOVERED"}
-    stage_series = by_t["fidvr_stage"].fillna("DISABLED")
+    stage_series = _fidvr_stage_series_with_cap_actions(by_t)
     if stage_series.empty:
         return []
 
@@ -496,18 +537,29 @@ def parse_distribution_log(log_path: Path) -> pd.DataFrame:
 
         fidvr = FIDVR_RE.search(line)
         if fidvr:
+            caps_status = fidvr.group("caps_status")
             row.update(
                 {
                     "fidvr_stage": fidvr.group("fidvr_stage"),
                     "tx_v_pu": float(fidvr.group("tx_v_pu")),
                     "motor_p_scale": float(fidvr.group("motor_p_scale")),
                     "motor_q_scale": float(fidvr.group("motor_q_scale")),
-                    "caps_on": fidvr.group("caps_on") == "on",
+                    "caps_status": caps_status,
+                    "caps_on": caps_status != "off",
                     "cap_fraction": float(fidvr.group("cap_fraction"))
                     if fidvr.group("cap_fraction") is not None
-                    else (1.0 if fidvr.group("caps_on") == "on" else 0.0),
+                    else (
+                        1.0
+                        if caps_status == "on"
+                        else 0.5
+                        if caps_status == "partial"
+                        else 0.0
+                    ),
                     "tap_pu": float(fidvr.group("tap_pu")),
                     "restore_frac": float(fidvr.group("restore_frac")),
+                    "thermal_restore_frac": float(fidvr.group("thermal_restore_frac"))
+                    if fidvr.group("thermal_restore_frac") is not None
+                    else 0.0,
                 }
             )
 
@@ -529,7 +581,9 @@ def parse_distribution_log(log_path: Path) -> pd.DataFrame:
                     "motor_stalled_groups": int(motor_state.group("motor_stalled_groups")),
                     "motor_tripped_groups": int(motor_state.group("motor_tripped_groups")),
                     "motor_restoring_groups": int(motor_state.group("motor_restoring_groups")),
-                    "dynamics_enabled": motor_state.group("dynamics_enabled") == "on",
+                    "dynamics_enabled": motor_state.group("dynamics_enabled") == "on"
+                    if motor_state.group("dynamics_enabled") is not None
+                    else False,
                 }
             )
 
@@ -537,6 +591,24 @@ def parse_distribution_log(log_path: Path) -> pd.DataFrame:
             tap_name = tap_match.group("name")
             tap_key = f"tap_{tap_name.lower()}"
             row[tap_key] = float(tap_match.group("value"))
+
+        for cap_match in CAP_STATE_RE.finditer(line):
+            cap_key = cap_match.group("name").lower()
+            state = cap_match.group("state")
+            row[f"{cap_key}_state"] = state
+            row[f"{cap_key}_enabled"] = state == "on"
+
+        for cap_match in CAP_VOLTAGE_RE.finditer(line):
+            cap_key = cap_match.group("name").lower()
+            row[f"{cap_key}_v_pu"] = float(cap_match.group("value"))
+
+        for cap_match in CAP_LOCK_RE.finditer(line):
+            cap_key = cap_match.group("name").lower()
+            row[f"{cap_key}_locked"] = cap_match.group("value") == "1"
+
+        for cap_match in CAP_ACTION_RE.finditer(line):
+            cap_key = cap_match.group("name").lower()
+            row[f"{cap_key}_action"] = cap_match.group("action")
 
         rows.append(row)
 
@@ -557,7 +629,14 @@ def parse_distribution_log(log_path: Path) -> pd.DataFrame:
     return df
 
 
-def make_plots(df: pd.DataFrame, out_dir: Path, log_stem: str, log_path: Path):
+def make_plots(
+    df: pd.DataFrame,
+    out_dir: Path,
+    log_stem: str,
+    log_path: Path,
+    x_limits=None,
+    voltage_y_limits=None,
+):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Prefer rows where the feeder actually received a new transmission-voltage
@@ -574,6 +653,8 @@ def make_plots(df: pd.DataFrame, out_dir: Path, log_stem: str, log_path: Path):
         .sort_values("t_granted")
         .drop(columns=["update_rank", "state_rank"])
     )
+    if "fidvr_stage" in by_t.columns:
+        by_t["fidvr_stage_effective"] = _fidvr_stage_series_with_cap_actions(by_t)
     x, xlabel = _time_axis_seconds_or_hours(by_t["t_granted"])
     dist_bus = by_t["dist_bus"].dropna().iloc[-1]
     feeder = int(by_t["feeder"].iloc[-1])
@@ -660,6 +741,7 @@ def make_plots(df: pd.DataFrame, out_dir: Path, log_stem: str, log_path: Path):
     if has_vpos:
         voltage_series.append(by_t["vavg_pu"])
     _set_voltage_limits(axes[0], voltage_series)
+    _apply_manual_voltage_ylim(axes[0], voltage_y_limits)
     axes[0].legend()
 
     axes[1].plot(x, by_t["va_pu"], label="Phase A", linewidth=1.6)
@@ -681,11 +763,12 @@ def make_plots(df: pd.DataFrame, out_dir: Path, log_stem: str, log_path: Path):
         [by_t["va_pu"], by_t["vb_pu"], by_t["vc_pu"], by_t["vavg_pu"]]
         + ([by_t["vpos_pu"]] if has_vpos else []),
     )
+    _apply_manual_voltage_ylim(axes[1], voltage_y_limits)
     axes[1].grid(True)
     axes[1].legend()
 
-
     fig.suptitle("OpenDSS Distribution-Side Voltage vs Time", fontsize=14)
+    _apply_manual_xlim(axes, x_limits)
     plt.tight_layout()
 
     plot_path = out_dir / f"{log_stem}_distribution_voltage_vs_time.png"
@@ -712,9 +795,12 @@ def make_plots(df: pd.DataFrame, out_dir: Path, log_stem: str, log_path: Path):
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Voltage magnitude |V| (pu)")
     ax.set_title(f"Distribution bus {dist_bus} voltage")
+    ax.set_ylim(0.4, 1.1)
     ax.grid(True)
     ax.legend()
-    _set_voltage_limits(ax, [by_t[dist_metric]] + ([by_t["vavg_pu"]] if has_vpos else []))
+    #_set_voltage_limits(ax, [by_t[dist_metric]] + ([by_t["vavg_pu"]] if has_vpos else []))
+    _apply_manual_voltage_ylim(ax, voltage_y_limits)
+    _apply_manual_xlim(ax, x_limits)
 
     single_plot_path = out_dir / f"{log_stem}_distribution_bus_voltage_vs_time.png"
     fig.tight_layout()
@@ -729,6 +815,7 @@ def make_plots(df: pd.DataFrame, out_dir: Path, log_stem: str, log_path: Path):
         "cap_fraction",
         "tap_pu",
         "restore_frac",
+        "thermal_restore_frac",
     }.issubset(by_t.columns):
         fig, axes = plt.subplots(2, 1, sharex=True, figsize=(10, 7.5))
 
@@ -769,6 +856,12 @@ def make_plots(df: pd.DataFrame, out_dir: Path, log_stem: str, log_path: Path):
         axes[1].plot(x, by_t["motor_p_scale"], label="Motor P scale", linewidth=1.7)
         axes[1].plot(x, by_t["motor_q_scale"], label="Motor Q scale", linewidth=1.7)
         axes[1].plot(x, by_t["restore_frac"], label="Restore fraction", linewidth=1.7)
+        axes[1].plot(
+            x,
+            by_t["thermal_restore_frac"],
+            label="Thermal restore fraction",
+            linewidth=1.5,
+        )
         if {"motor_slip_avg", "motor_slip_max"}.issubset(by_t.columns):
             axes[1].plot(
                 x,
@@ -837,6 +930,22 @@ def main():
         default=None,
         help="Output folder (default: same folder as the log)",
     )
+    parser.add_argument(
+        "--xlim",
+        type=float,
+        nargs=2,
+        metavar=("XMIN", "XMAX"),
+        default=None,
+        help="Optional shared x-axis limits in seconds for exported plots.",
+    )
+    parser.add_argument(
+        "--voltage-ylim",
+        type=float,
+        nargs=2,
+        metavar=("YMIN", "YMAX"),
+        default=None,
+        help="Optional shared y-axis limits in pu for voltage plots.",
+    )
     args = parser.parse_args()
 
     log_path = Path(args.log).expanduser().resolve()
@@ -847,9 +956,22 @@ def main():
 
     print(f"[INFO] Log: {log_path}")
     print(f"[INFO] Out: {out_dir}")
+    if args.xlim is not None:
+        print(f"[INFO] X limits: {tuple(args.xlim)}")
+    if args.voltage_ylim is not None:
+        print(f"[INFO] Voltage Y limits: {tuple(args.voltage_ylim)}")
 
     df = parse_distribution_log(log_path)
-    make_plots(df, out_dir, log_path.stem, log_path)
+    make_plots(
+        df,
+        out_dir,
+        log_path.stem,
+        log_path,
+        x_limits=tuple(args.xlim) if args.xlim is not None else None,
+        voltage_y_limits=tuple(args.voltage_ylim)
+        if args.voltage_ylim is not None
+        else None,
+    )
 
 
 if __name__ == "__main__":

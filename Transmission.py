@@ -1,4 +1,11 @@
-# Transmission.py
+"""ANDES transmission federate for the ANDES-OpenDSS-HELICS FIDVR study.
+
+The transmission side receives aggregate feeder complex power, injects it into
+the ANDESe as DistLoad P and Q, advances time domain simulation(TDS), and publishes the
+interface bus voltage to OpenDSS feeder federates.
+"""
+
+# import standard libraries
 import helics as h
 import andes
 import math
@@ -7,9 +14,10 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+#import local modules
 from fidvr_alerts import FidvrAlertDetector, alert_summary_lines
 
-
+# column names for the transmission timeseries CSV output
 TRANSMISSION_CSV_COLUMNS = [
     "iter",
     "outer_iter",
@@ -64,6 +72,7 @@ TRANSMISSION_CSV_COLUMNS = [
     "vf_max_bus",
 ]
 
+# mapping of HELICS iteration result codes to human readable names for logging
 ITER_STATE_NAME = {
     h.HELICS_ITERATION_RESULT_NEXT_STEP: "NEXT_STEP",
     h.HELICS_ITERATION_RESULT_ITERATING: "ITERATING",
@@ -71,7 +80,7 @@ ITER_STATE_NAME = {
     h.HELICS_ITERATION_RESULT_HALTED: "HALTED",
 }
 
-
+# Get the target simulation time from the environment variable SIM_TARGET_TIME, with validation.
 def get_target_time() -> float:
     value = os.environ.get("SIM_TARGET_TIME", "10.0")
     try:
@@ -87,6 +96,7 @@ def get_target_time() -> float:
     return target
 
 
+# Helper functions to read and validate environment variables for configuration parameters.
 def get_positive_env_float(name: str, default: float) -> float:
     value = os.environ.get(name, str(default))
     try:
@@ -170,7 +180,7 @@ def get_transmission_case_path(script_dir: Path) -> Path:
 
 
 def get_interface_bus() -> int:
-    return get_positive_env_int("TX_INTERFACE_BUS", 2)
+    return get_positive_env_int("TX_INTERFACE_BUS", 14)
 
 
 def get_feeder_count() -> int:
@@ -201,9 +211,66 @@ def parse_postfault_lines() -> list[str]:
     return []
 
 
+def get_disturbance_mode() -> str:
+    raw_value = os.environ.get("TX_DISTURBANCE_MODE", "fault").strip().lower()
+    aliases = {
+        "fault": "fault",
+        "line": "line_trip_reclose",
+        "toggle": "line_trip_reclose",
+        "trip_reclose": "line_trip_reclose",
+        "line_trip_reclose": "line_trip_reclose",
+    }
+    if raw_value not in aliases:
+        valid = ", ".join(sorted(aliases))
+        raise ValueError(
+            f"Invalid TX_DISTURBANCE_MODE='{raw_value}'. Expected one of: {valid}."
+        )
+    return aliases[raw_value]
+
+
 def get_disturbance_config():
-    """Configure a true ANDES fault with optional post-fault topology stress."""
+    """Configure the transmission disturbance workflow.
+
+    The default path is a bus fault with optional post-fault line
+    opening. A compatibility path is also kept for the original benchmark that
+    trips a line at `TX_DISTURBANCE_TIME` and recloses it after
+    `TX_DISTURBANCE_DURATION`.
+    """
     enabled = get_env_bool("TX_ENABLE_DISTURBANCE", True)
+    mode = get_disturbance_mode()
+
+    if mode == "line_trip_reclose":
+        line_indices = parse_postfault_lines()
+        if enabled and not line_indices:
+            raise ValueError(
+                "TX_DISTURBANCE_MODE=line_trip_reclose requires "
+                "TX_DISTURBANCE_LINE, TX_DISTURBANCE_LINES, TX_POSTFAULT_LINE, "
+                "or TX_POSTFAULT_LINES."
+            )
+        line_trip_time = get_positive_env_float("TX_DISTURBANCE_TIME", 1.0)
+        line_duration = get_positive_env_float("TX_DISTURBANCE_DURATION", 0.2)
+        line_reclose_time = line_trip_time + line_duration
+        return {
+            "enabled": enabled,
+            "mode": mode,
+            "disturbance_start_time": line_trip_time,
+            "disturbance_end_time": line_reclose_time,
+            "fault_idx": None,
+            "fault_bus": None,
+            "fault_time": None,
+            "fault_duration": None,
+            "fault_clear_time": None,
+            "fault_rf": math.nan,
+            "fault_xf": math.nan,
+            "postfault_line_enabled": False,
+            "line_indices": line_indices,
+            "line_idx": line_indices[0] if line_indices else None,
+            "postfault_trip_time": None,
+            "line_trip_time": line_trip_time,
+            "line_duration": line_duration,
+            "line_reclose_time": line_reclose_time,
+        }
+
     fault_bus = get_positive_env_int("TX_FAULT_BUS", get_interface_bus())
     fault_time = get_positive_env_float(
         "TX_FAULT_TIME",
@@ -214,9 +281,8 @@ def get_disturbance_config():
         get_positive_env_float("TX_DISTURBANCE_DURATION", 0.08),
     )
     fault_rf = get_nonnegative_env_float("TX_FAULT_RF", 0.0)
-    # The IEEE14 dynamic case needs a numerically softer fault reactance than
-    # the near-zero starting point often used in textbook examples.
-    fault_xf = get_nonnegative_env_float("TX_FAULT_XF", 0.3)
+    # The IEEE14 dynamic case needs a numerically softer fault reactance to converge
+    fault_xf = get_nonnegative_env_float("TX_FAULT_XF", 0.25)
     fault_clear_time = fault_time + fault_duration
 
     line_indices = parse_postfault_lines()
@@ -228,6 +294,9 @@ def get_disturbance_config():
 
     return {
         "enabled": enabled,
+        "mode": mode,
+        "disturbance_start_time": fault_time,
+        "disturbance_end_time": fault_clear_time,
         "fault_idx": "Fault_Interface",
         "fault_bus": fault_bus,
         "fault_time": fault_time,
@@ -243,12 +312,12 @@ def get_disturbance_config():
 
 
 def get_cosim_step_config(disturbance):
-    """Get co-simulation time stepping with finer resolution around the fault event."""
-    fine_dt = get_positive_env_float("SIM_FINE_DT", 0.005)
-    coarse_dt = get_positive_env_float("SIM_COARSE_DT", 0.02)
+    """Get co-simulation time stepping"""
+    fine_dt = get_positive_env_float("SIM_FINE_DT", 0.03)
+    coarse_dt = get_positive_env_float("SIM_COARSE_DT", 0.03)
     if disturbance["enabled"]:
-        # Keep fine stepping well past fault recovery onset
-        coarse_start_default = disturbance["fault_clear_time"] + 0.5
+        # Keep fine stepping well past disturbance recovery onset.
+        coarse_start_default = disturbance["disturbance_end_time"] + 0.5
     else:
         coarse_start_default = 0.5
     coarse_start = get_positive_env_float("SIM_COARSE_START", coarse_start_default)
@@ -261,8 +330,15 @@ def get_cosim_step_config(disturbance):
 
 
 def get_tds_internal_step(fine_dt: float) -> float:
-    """Get transmission TDS internal step."""
-    default_step = min(fine_dt / 5.0, 0.001)
+    """Get the internal ANDES TDS step.
+
+    This is separate from SIM_FINE_DT. SIM_FINE_DT is the HELICS exchange and
+    feeder control update step; TX_TDS_STEP is the internal transmission solver
+    step used while advancing to the next granted HELICS time. Since ANDES uses 
+    implicit trapezoidal method for time integration, 0.03 is the default value.
+    """
+
+    default_step = 0.03
     return get_positive_env_float("TX_TDS_STEP", default_step)
 
 
@@ -287,9 +363,7 @@ def disable_built_in_disturbances(ss):
 
 
 def split_line_for_parallel_trip(ss, base_idx: str, parallel_idx: str):
-    # Optional helper kept for future studies where a synthetic parallel
-    # branch is useful; the current contingency uses an existing double-circuit
-    # line and does not call this path.
+    # the current contingency does not call this path.
     base_uid = ss.Line.idx2uid(base_idx)
 
     def _value(field):
@@ -393,6 +467,7 @@ def get_fault_diagnostics(ss, fault_uid, fault_idx, fault_bus, fault_bus_uid, di
     }
 
 
+# Collect extra elements for the logging function
 def get_event_line_diagnostics(
     ss,
     line_uid,
@@ -546,7 +621,7 @@ def make_timeseries_row(
         row.update(diagnostics)
     return row
 
-
+# Write the collected timeseries data to a CSV file for analysis.
 def write_transmission_timeseries(csv_path, rows):
     if rows:
         df = pd.DataFrame(rows, columns=TRANSMISSION_CSV_COLUMNS)
@@ -627,7 +702,8 @@ print(
 )
 ss.PQ.add(idx="DistLoad", name="DistLoad", bus=INTERFACE_BUS, p0=0.0, q0=0.0)
 
-if DISTURBANCE["enabled"]:
+# 3. Configure disturbances and diagnostics
+if DISTURBANCE["enabled"] and DISTURBANCE["mode"] == "fault":
     ss.add(
         "Fault",
         {
@@ -663,6 +739,33 @@ if DISTURBANCE["enabled"]:
             f"Transmission secondary event: line trip on {secondary_lines} "
             f"at t={DISTURBANCE['postfault_trip_time']:.3f}s (after fault clears)"
         )
+elif DISTURBANCE["enabled"] and DISTURBANCE["mode"] == "line_trip_reclose":
+    for line_idx in DISTURBANCE["line_indices"]:
+        ss.add(
+            "Toggle",
+            {
+                "idx": f"Trip_{line_idx}",
+                "model": "Line",
+                "dev": line_idx,
+                "t": DISTURBANCE["line_trip_time"],
+            },
+        )
+        ss.add(
+            "Toggle",
+            {
+                "idx": f"Reclose_{line_idx}",
+                "model": "Line",
+                "dev": line_idx,
+                "t": DISTURBANCE["line_reclose_time"],
+            },
+        )
+    line_names = ", ".join(DISTURBANCE["line_indices"])
+    print(
+        "Transmission disturbance: "
+        f"line trip/reclose on {line_names} "
+        f"from t={DISTURBANCE['line_trip_time']:.3f}s "
+        f"to t={DISTURBANCE['line_reclose_time']:.3f}s"
+    )
 
 
 # Constant-power behavior during TDS
@@ -676,27 +779,28 @@ ss.PQ.config.q2z = 0.0
 ss.setup()
 ss.PFlow.run()
 
+# Validate that the disturbance configuration can be resolved against the case data.
 fault_uid = None
 fault_bus_uid = None
-try:
-    fault_uid = ss.Fault.idx2uid(DISTURBANCE["fault_idx"])
-    fault_bus_uid = ss.Bus.idx2uid(DISTURBANCE["fault_bus"])
-except Exception as exc:
-    if DISTURBANCE["enabled"]:
+if DISTURBANCE["enabled"] and DISTURBANCE["mode"] == "fault":
+    try:
+        fault_uid = ss.Fault.idx2uid(DISTURBANCE["fault_idx"])
+        fault_bus_uid = ss.Bus.idx2uid(DISTURBANCE["fault_bus"])
+    except Exception as exc:
         raise RuntimeError(
             f"Transmission fault '{DISTURBANCE['fault_idx']}' on bus "
             f"{DISTURBANCE['fault_bus']} could not be resolved."
         ) from exc
-    print(
-        "Transmission: warning: "
-        f"could not resolve configured fault '{DISTURBANCE['fault_idx']}': {exc}"
-    )
 
+# `line_uid` is used for both fault and line trip disturbances, but only one will be active based on the mode.
 line_uid = None
 line_bus1 = None
 line_bus2 = None
 line_bus1_uid = None
 line_bus2_uid = None
+
+# For line trip disturbances, we only monitor the first line in the list for diagnostics and logging purposes, 
+# but all lines in the list will be tripped/reclosed according to the disturbance configuration.
 
 if DISTURBANCE["line_idx"] is not None:
     try:
@@ -716,11 +820,17 @@ if line_uid is not None:
         f"Transmission post-fault monitored line: {DISTURBANCE['line_idx']} "
         f"({line_bus1}-{line_bus2})"
     )
-if DISTURBANCE["enabled"]:
+if DISTURBANCE["enabled"] and DISTURBANCE["mode"] == "fault":
     print(
         f"Transmission primary disturbance: bus fault at bus "
         f"{DISTURBANCE['fault_bus']} from t={DISTURBANCE['fault_time']:.3f}s "
         f"to t={DISTURBANCE['fault_clear_time']:.3f}s"
+    )
+elif DISTURBANCE["enabled"] and DISTURBANCE["mode"] == "line_trip_reclose":
+    print(
+        f"Transmission primary disturbance: line trip/reclose on "
+        f"{DISTURBANCE['line_idx']} from t={DISTURBANCE['line_trip_time']:.3f}s "
+        f"to t={DISTURBANCE['line_reclose_time']:.3f}s"
     )
 else:
     print("Transmission disturbance: disabled for baseline run.")
@@ -804,8 +914,7 @@ ss.TDS.config.tf = 0.0
 
 # Adjust solver tolerances for fault event handling
 if DISTURBANCE["enabled"]:
-    # Relax tolerances during fault to help convergence (DAE tolerance
-    # is not exposed on ss.dae in this ANDES API; adjust TDS tolerances instead)
+    # Relax tolerances during fault to help convergence
     ss.TDS.config.atol = 1e-6
     ss.TDS.config.rtol = 1e-4
     # Limit minimum time step to prevent excessive reduction
@@ -820,7 +929,7 @@ print(f"Interface bus {INTERFACE_BUS} initial voltage: {interface_voltage_comple
 print(f"Interface bus {INTERFACE_BUS} initial voltage mag: {Vmag:.6f}")
 print(f"Interface bus {INTERFACE_BUS} initial voltage angle: {V_angle_rad:.6f}")
 
-# Optional: print the now-consistent initialized DistLoad
+# Optional: print the now consistent initialized DistLoad
 uid = ss.PQ.idx2uid("DistLoad")
 print(f"DistLoad p0={ss.PQ.p0.v[uid]:.6f}, q0={ss.PQ.q0.v[uid]:.6f}")
 
@@ -862,7 +971,7 @@ timeseries_rows = [
 tx_alert_detector = FidvrAlertDetector()
 tx_alert_detector.update(0.0, Vmag)
 
-# 3. Dynamic loop starts here, same idea as your current code
+# 4. Dynamic loop starts here, same idea as the static loop but with time advancement and more complex iteration control based on convergence of the interface voltage.
 current_time = 0.0
 target_time = get_target_time()
 print(f"Transmission: target simulation time = {target_time:.3f} s")
@@ -883,6 +992,8 @@ try:
         iter_req = h.HELICS_ITERATION_REQUEST_ITERATE_IF_NEEDED
 
         for k in range(max_outer):
+            # At each granted HELICS time, feeders provide P/Q and this federate
+            # publishes the updated interface voltage after ANDES advances.
             granted_time, iteration_state = h.helicsFederateRequestTimeIterative(
                 trans_fed, next_time, iter_req
             )

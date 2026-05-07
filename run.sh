@@ -3,16 +3,22 @@ set -euo pipefail # Strict error handling
 
 PORT="${PORT:-23406}" # Broker port
 FIDVR_ENABLE="${FIDVR_ENABLE:-0}"
-FIDVR_MOTOR_MODEL="${FIDVR_MOTOR_MODEL:-surrogate}"
 FIDVR_PROFILE="${FIDVR_PROFILE:-scaled}"
 case "$FIDVR_PROFILE" in
-  scaled|weak_bus14|alerts)
+  scaled|weak_bus14|alerts|fault_only|second_half|second_half_fast_controls|second_half_capscale)
     ;;
   *)
-    echo "Invalid FIDVR_PROFILE='$FIDVR_PROFILE'. Expected 'scaled', 'alerts', or 'weak_bus14'." >&2
+    echo "Invalid FIDVR_PROFILE='$FIDVR_PROFILE'. Expected 'scaled', 'alerts', 'fault_only', 'weak_bus14', 'second_half', 'second_half_fast_controls', or 'second_half_capscale'." >&2
     exit 2
     ;;
 esac
+if [[ -n "${TX_DISTURBANCE_MODE+x}" || -n "${TX_DISTURBANCE_LINE+x}" || \
+      -n "${TX_DISTURBANCE_LINES+x}" || -n "${TX_DISTURBANCE_TIME+x}" || \
+      -n "${TX_DISTURBANCE_DURATION+x}" ]]; then
+  echo "The old TX_DISTURBANCE_* line-trip/reclose interface was removed." >&2
+  echo "Use TX_FAULT_* for the primary bus fault and TX_POSTFAULT_* for optional post-fault line trips." >&2
+  exit 2
+fi
 
 TARGET_TIME_WAS_SET=0
 [[ -n "${TARGET_TIME+x}" ]] && TARGET_TIME_WAS_SET=1
@@ -26,21 +32,39 @@ DIST_LOAD_SCALE_WAS_SET=0
 [[ -n "${DIST_LOAD_SCALE+x}" ]] && DIST_LOAD_SCALE_WAS_SET=1
 FIDVR_MOTOR_SHARE_WAS_SET=0
 [[ -n "${FIDVR_MOTOR_SHARE+x}" ]] && FIDVR_MOTOR_SHARE_WAS_SET=1
+FINE_DT_WAS_SET=0
+[[ -n "${FINE_DT+x}" ]] && FINE_DT_WAS_SET=1
 COARSE_DT_WAS_SET=0
 [[ -n "${COARSE_DT+x}" ]] && COARSE_DT_WAS_SET=1
+COARSE_START_WAS_SET=0
+[[ -n "${COARSE_START+x}" ]] && COARSE_START_WAS_SET=1
 FIDVR_ENABLE_REG_CONTROL_WAS_SET=0
 [[ -n "${FIDVR_ENABLE_REG_CONTROL+x}" ]] && FIDVR_ENABLE_REG_CONTROL_WAS_SET=1
 FIDVR_ENABLE_CAP_CONTROL_WAS_SET=0
 [[ -n "${FIDVR_ENABLE_CAP_CONTROL+x}" ]] && FIDVR_ENABLE_CAP_CONTROL_WAS_SET=1
 FIDVR_CAPACITOR_INITIAL_FRACTION_WAS_SET=0
 [[ -n "${FIDVR_CAPACITOR_INITIAL_FRACTION+x}" ]] && FIDVR_CAPACITOR_INITIAL_FRACTION_WAS_SET=1
+FIDVR_CAPACITOR_KVAR_SCALE_WAS_SET=0
+[[ -n "${FIDVR_CAPACITOR_KVAR_SCALE+x}" ]] && FIDVR_CAPACITOR_KVAR_SCALE_WAS_SET=1
+FIDVR_REGULATOR_LOW_VOLTAGE_PU_WAS_SET=0
+[[ -n "${FIDVR_REGULATOR_LOW_VOLTAGE_PU+x}" ]] && FIDVR_REGULATOR_LOW_VOLTAGE_PU_WAS_SET=1
+FIDVR_REGULATOR_HIGH_VOLTAGE_PU_WAS_SET=0
+[[ -n "${FIDVR_REGULATOR_HIGH_VOLTAGE_PU+x}" ]] && FIDVR_REGULATOR_HIGH_VOLTAGE_PU_WAS_SET=1
+FIDVR_REGULATOR_DELAY_S_WAS_SET=0
+[[ -n "${FIDVR_REGULATOR_DELAY_S+x}" ]] && FIDVR_REGULATOR_DELAY_S_WAS_SET=1
+FIDVR_REGULATOR_TAP_DELAY_S_WAS_SET=0
+[[ -n "${FIDVR_REGULATOR_TAP_DELAY_S+x}" ]] && FIDVR_REGULATOR_TAP_DELAY_S_WAS_SET=1
 FIDVR_ALERT_SIGNAL_WAS_SET=0
 [[ -n "${FIDVR_ALERT_SIGNAL+x}" ]] && FIDVR_ALERT_SIGNAL_WAS_SET=1
 FIDVR_ALERT_BUS_WAS_SET=0
 [[ -n "${FIDVR_ALERT_BUS+x}" ]] && FIDVR_ALERT_BUS_WAS_SET=1
-TX_DISTURBANCE_LINES_WAS_SET=0
-if [[ -n "${TX_POSTFAULT_LINES+x}" || -n "${TX_POSTFAULT_LINE+x}" || -n "${TX_DISTURBANCE_LINES+x}" || -n "${TX_DISTURBANCE_LINE+x}" ]]; then
-  TX_DISTURBANCE_LINES_WAS_SET=1
+TX_FAULT_DURATION_WAS_SET=0
+[[ -n "${TX_FAULT_DURATION+x}" ]] && TX_FAULT_DURATION_WAS_SET=1
+TX_FAULT_XF_WAS_SET=0
+[[ -n "${TX_FAULT_XF+x}" ]] && TX_FAULT_XF_WAS_SET=1
+TX_POSTFAULT_LINES_WAS_SET=0
+if [[ -n "${TX_POSTFAULT_LINES+x}" || -n "${TX_POSTFAULT_LINE+x}" ]]; then
+  TX_POSTFAULT_LINES_WAS_SET=1
 fi
 
 if [[ -z "${TX_ENABLE_DISTURBANCE:-}" ]]; then
@@ -57,13 +81,9 @@ if [[ -z "${TX_KEEP_BUILTIN_EVENTS:-}" ]]; then
 else
   TX_KEEP_BUILTIN_EVENTS="$TX_KEEP_BUILTIN_EVENTS"
 fi
-# Fault-based disturbance defaults (no post-fault line outage by default)
-if [[ -z "${TX_POSTFAULT_LINES:-}" ]]; then
-  TX_POSTFAULT_LINES="${TX_DISTURBANCE_LINES:-}"
-fi
-if [[ -z "${TX_POSTFAULT_LINE:-}" ]]; then
-  TX_POSTFAULT_LINE="${TX_DISTURBANCE_LINE:-}"
-fi
+# Fault-based disturbance defaults 
+TX_POSTFAULT_LINES="${TX_POSTFAULT_LINES:-}"
+TX_POSTFAULT_LINE="${TX_POSTFAULT_LINE:-}"
 if [[ -z "${TX_POSTFAULT_TRIP_DELAY:-}" ]]; then
   TX_POSTFAULT_TRIP_DELAY="0.01"
 fi
@@ -78,8 +98,6 @@ if [[ -z "${TX_FAULT_DURATION:-}" ]]; then
 else
   TX_FAULT_DURATION="$TX_FAULT_DURATION"
 fi
-TX_DISTURBANCE_TIME="$TX_FAULT_TIME"
-TX_DISTURBANCE_DURATION="$TX_FAULT_DURATION"
 TX_FAULT_RF="${TX_FAULT_RF:-0.0}"
 # The IEEE14 dynamic case needs a numerically softer bus fault than the
 # textbook near-zero reactance starting point. This default keeps the
@@ -91,17 +109,24 @@ if [[ -z "${TARGET_TIME:-}" ]]; then
   elif [[ "$TX_ENABLE_DISTURBANCE" == "1" ]]; then
     TARGET_TIME="4.0"
   else
-    TARGET_TIME="2.0"
+    TARGET_TIME="10.0"
   fi
 else
   TARGET_TIME="$TARGET_TIME"
 fi
 FEEDER_COUNT="${FEEDER_COUNT:-1}"
 PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-5}"
-FINE_DT="${FINE_DT:-0.005}"      # seconds; finer resolution for FIDVR fault event
-COARSE_DT="${COARSE_DT:-0.02}"   # seconds; relaxed after fault recovery onset
+# FINE_DT is the HELICS exchange interval and therefore also the feeder-control
+# timer resolution. Keep it small enough to resolve the WECC Motor D Tstall
+# timer during the fault. TX_TDS_STEP is the separate ANDES internal TDS step.
+FINE_DT="${FINE_DT:-0.003}"
+COARSE_DT="${COARSE_DT:-0.03}"
+TX_TDS_STEP="${TX_TDS_STEP:-0.03}"
 if [[ -z "${COARSE_START:-}" ]]; then
-  COARSE_START=$(awk -v t="$TX_FAULT_TIME" -v d="$TX_FAULT_DURATION" 'BEGIN { printf "%.3f", t + d + 0.5 }')
+  COARSE_START=$(
+    awk -v t="$TX_FAULT_TIME" -v d="$TX_FAULT_DURATION" \
+      'BEGIN { printf "%.3f", t + d + 0.5 }'
+  )
 else
   COARSE_START="$COARSE_START"
 fi
@@ -130,11 +155,7 @@ else
   DIST_LOAD_SCALE="$DIST_LOAD_SCALE"
 fi
 if [[ -z "${FIDVR_MOTOR_SHARE:-}" ]]; then
-  if [[ "$FIDVR_MOTOR_MODEL" == "surrogate" ]]; then
-    FIDVR_MOTOR_SHARE="0.45"
-  else
-    FIDVR_MOTOR_SHARE="0.35"
-  fi
+  FIDVR_MOTOR_SHARE="0.35"
 else
   FIDVR_MOTOR_SHARE="$FIDVR_MOTOR_SHARE"
 fi
@@ -146,7 +167,7 @@ FIDVR_ALERT_BUS="${FIDVR_ALERT_BUS:-}"
 FIDVR_REGULATOR_MONITOR_BUS="${FIDVR_REGULATOR_MONITOR_BUS:-}"
 if [[ "$FIDVR_ENABLE" == "1" && "$FIDVR_PROFILE" == "scaled" ]]; then
   if [[ "$FEEDER_COUNT_WAS_SET" == "0" ]]; then
-    # Start with one feeder for validation, scale up later
+    # Start with one feeder for validation
     FEEDER_COUNT="1"
   fi
   if [[ "$DIST_VOLTAGE_BUS_WAS_SET" == "0" ]]; then
@@ -156,10 +177,44 @@ if [[ "$FIDVR_ENABLE" == "1" && "$FIDVR_PROFILE" == "scaled" ]]; then
   if [[ "$FIDVR_MOTOR_SHARE_WAS_SET" == "0" ]]; then
     FIDVR_MOTOR_SHARE="0.45"
   fi
-  if [[ "$TX_DISTURBANCE_LINES_WAS_SET" == "0" ]]; then
+  if [[ "$TX_POSTFAULT_LINES_WAS_SET" == "0" ]]; then
     TX_POSTFAULT_LINES=""
     TX_POSTFAULT_LINE=""
   fi
+fi
+if [[ "$FIDVR_ENABLE" == "1" && "$FIDVR_PROFILE" == "fault_only" ]]; then
+  if [[ "$TARGET_TIME_WAS_SET" == "0" ]]; then
+    TARGET_TIME="15.0"
+  fi
+  if [[ "$FEEDER_COUNT_WAS_SET" == "0" ]]; then
+    FEEDER_COUNT="2"
+  fi
+  if [[ "$DIST_VOLTAGE_BUS_WAS_SET" == "0" ]]; then
+    DIST_VOLTAGE_BUS="675"
+  fi
+  if [[ "$DIST_LOAD_SCALE_WAS_SET" == "0" ]]; then
+    DIST_LOAD_SCALE="1.5"
+  fi
+  if [[ "$FIDVR_MOTOR_SHARE_WAS_SET" == "0" ]]; then
+    FIDVR_MOTOR_SHARE="0.50"
+  fi
+  if [[ "$FIDVR_ENABLE_CAP_CONTROL_WAS_SET" == "0" ]]; then
+    FIDVR_ENABLE_CAP_CONTROL="0"
+  fi
+  if [[ "$FIDVR_ENABLE_REG_CONTROL_WAS_SET" == "0" ]]; then
+    FIDVR_ENABLE_REG_CONTROL="0"
+  fi
+  if [[ "$TX_FAULT_DURATION_WAS_SET" == "0" ]]; then
+    TX_FAULT_DURATION="0.10"
+  fi
+  if [[ "$TX_FAULT_XF_WAS_SET" == "0" ]]; then
+    TX_FAULT_XF="0.28"
+  fi
+  if [[ "$TX_POSTFAULT_LINES_WAS_SET" == "0" ]]; then
+    TX_POSTFAULT_LINES=""
+    TX_POSTFAULT_LINE=""
+  fi
+  FIDVR_PREFAULT_MIN_VOLTAGE_PU="${FIDVR_PREFAULT_MIN_VOLTAGE_PU:-0.95}"
 fi
 if [[ "$FIDVR_ENABLE" == "1" && "$FIDVR_PROFILE" == "alerts" ]]; then
   if [[ "$TARGET_TIME_WAS_SET" == "0" ]]; then
@@ -203,14 +258,10 @@ if [[ "$FIDVR_ENABLE" == "1" && "$FIDVR_PROFILE" == "alerts" ]]; then
   FIDVR_REGULATOR_MONITOR_BUS="${FIDVR_REGULATOR_MONITOR_BUS:-632}"
   FIDVR_REGULATOR_DELAY_S="${FIDVR_REGULATOR_DELAY_S:-2.0}"
   FIDVR_REGULATOR_TAP_DELAY_S="${FIDVR_REGULATOR_TAP_DELAY_S:-0.5}"
-  FIDVR_MOTOR_THERMAL_TRIP_TIME_S="${FIDVR_MOTOR_THERMAL_TRIP_TIME_S:-6.5}"
-  FIDVR_MOTOR_THERMAL_TRIP_SPREAD_S="${FIDVR_MOTOR_THERMAL_TRIP_SPREAD_S:-0.5}"
-  FIDVR_MOTOR_RECONNECT_DELAY_S="${FIDVR_MOTOR_RECONNECT_DELAY_S:-20.0}"
-  FIDVR_MOTOR_RECONNECT_RAMP_S="${FIDVR_MOTOR_RECONNECT_RAMP_S:-6.0}"
   if [[ "$COARSE_DT_WAS_SET" == "0" ]]; then
     COARSE_DT="0.03"
   fi
-  if [[ "$TX_DISTURBANCE_LINES_WAS_SET" == "0" ]]; then
+  if [[ "$TX_POSTFAULT_LINES_WAS_SET" == "0" ]]; then
     TX_POSTFAULT_LINES=""
     TX_POSTFAULT_LINE=""
   fi
@@ -231,14 +282,113 @@ if [[ "$FIDVR_ENABLE" == "1" && "$FIDVR_PROFILE" == "weak_bus14" ]]; then
   if [[ "$DIST_LOAD_SCALE_WAS_SET" == "0" ]]; then
     DIST_LOAD_SCALE="1.0"
   fi
-  if [[ "$TX_DISTURBANCE_LINES_WAS_SET" == "0" ]]; then
+  if [[ "$FIDVR_MOTOR_SHARE_WAS_SET" == "0" ]]; then
+    # Motor D share is the feeder composition/CMPLDW fraction; the WECC
+    # electrical and thermal Motor D parameters remain at their published defaults.
+    FIDVR_MOTOR_SHARE="0.80"
+  fi
+  if [[ "$TX_POSTFAULT_LINES_WAS_SET" == "0" ]]; then
     TX_POSTFAULT_LINES=""
     TX_POSTFAULT_LINE=""
   fi
 fi
+if [[ "$FIDVR_ENABLE" == "1" && ( "$FIDVR_PROFILE" == "second_half" || "$FIDVR_PROFILE" == "second_half_fast_controls" || "$FIDVR_PROFILE" == "second_half_capscale" ) ]]; then
+  if [[ "$TARGET_TIME_WAS_SET" == "0" ]]; then
+    TARGET_TIME="120.0"
+  fi
+  if [[ "$FEEDER_COUNT_WAS_SET" == "0" ]]; then
+    FEEDER_COUNT="1"
+  fi
+  if [[ "$TX_INTERFACE_BUS_WAS_SET" == "0" ]]; then
+    TX_INTERFACE_BUS="14"
+  fi
+  if [[ "$DIST_VOLTAGE_BUS_WAS_SET" == "0" ]]; then
+    DIST_VOLTAGE_BUS="675"
+  fi
+  if [[ "$DIST_LOAD_SCALE_WAS_SET" == "0" ]]; then
+    DIST_LOAD_SCALE="1.0"
+  fi
+  if [[ "$FIDVR_MOTOR_SHARE_WAS_SET" == "0" ]]; then
+    FIDVR_MOTOR_SHARE="1.00"
+  fi
+  if [[ "$FINE_DT_WAS_SET" == "0" ]]; then
+    FINE_DT="0.005"
+  fi
+  if [[ "$COARSE_DT_WAS_SET" == "0" ]]; then
+    COARSE_DT="0.02"
+  fi
+  if [[ "$COARSE_START_WAS_SET" == "0" ]]; then
+    COARSE_START="1.580"
+  fi
+  if [[ "$FIDVR_ALERT_SIGNAL_WAS_SET" == "0" ]]; then
+    FIDVR_ALERT_SIGNAL="dist_bus"
+  fi
+  if [[ "$FIDVR_ENABLE_CAP_CONTROL_WAS_SET" == "0" ]]; then
+    FIDVR_ENABLE_CAP_CONTROL="1"
+  fi
+  if [[ "$FIDVR_ENABLE_REG_CONTROL_WAS_SET" == "0" ]]; then
+    FIDVR_ENABLE_REG_CONTROL="1"
+  fi
+  if [[ "$FIDVR_CAPACITOR_INITIAL_FRACTION_WAS_SET" == "0" ]]; then
+    FIDVR_CAPACITOR_INITIAL_FRACTION="1.0"
+  fi
+  FIDVR_CAPACITOR_ON_VOLTAGE_PU="${FIDVR_CAPACITOR_ON_VOLTAGE_PU:-0.97}"
+  FIDVR_CAPACITOR_OFF_VOLTAGE_PU="${FIDVR_CAPACITOR_OFF_VOLTAGE_PU:-1.03}"
+  FIDVR_CAPACITOR_ON_DELAY_S="${FIDVR_CAPACITOR_ON_DELAY_S:-10.0}"
+  FIDVR_CAPACITOR_OFF_DELAY_S="${FIDVR_CAPACITOR_OFF_DELAY_S:-2.0}"
+  FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN="${FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN:-1}"
+  FIDVR_REGULATOR_MONITOR_BUS="${FIDVR_REGULATOR_MONITOR_BUS:-675}"
+  FIDVR_REGULATOR_LOW_VOLTAGE_PU="${FIDVR_REGULATOR_LOW_VOLTAGE_PU:-0.99}"
+  FIDVR_REGULATOR_HIGH_VOLTAGE_PU="${FIDVR_REGULATOR_HIGH_VOLTAGE_PU:-1.03}"
+  FIDVR_REGULATOR_DELAY_S="${FIDVR_REGULATOR_DELAY_S:-15.0}"
+  FIDVR_REGULATOR_TAP_DELAY_S="${FIDVR_REGULATOR_TAP_DELAY_S:-2.0}"
+  if [[ "$TX_FAULT_DURATION_WAS_SET" == "0" ]]; then
+    TX_FAULT_DURATION="0.08"
+  fi
+  if [[ "$TX_FAULT_XF_WAS_SET" == "0" ]]; then
+    TX_FAULT_XF="0.3"
+  fi
+  if [[ "$TX_POSTFAULT_LINES_WAS_SET" == "0" ]]; then
+    TX_POSTFAULT_LINES=""
+    TX_POSTFAULT_LINE=""
+  fi
+  if [[ "$FIDVR_PROFILE" == "second_half_fast_controls" ]]; then
+    if [[ "$FIDVR_REGULATOR_LOW_VOLTAGE_PU_WAS_SET" == "0" ]]; then
+      FIDVR_REGULATOR_LOW_VOLTAGE_PU="1.01"
+    fi
+    if [[ "$FIDVR_REGULATOR_HIGH_VOLTAGE_PU_WAS_SET" == "0" ]]; then
+      FIDVR_REGULATOR_HIGH_VOLTAGE_PU="1.05"
+    fi
+    if [[ "$FIDVR_REGULATOR_DELAY_S_WAS_SET" == "0" ]]; then
+      FIDVR_REGULATOR_DELAY_S="8.0"
+    fi
+    if [[ "$FIDVR_REGULATOR_TAP_DELAY_S_WAS_SET" == "0" ]]; then
+      FIDVR_REGULATOR_TAP_DELAY_S="1.0"
+    fi
+  fi
+  if [[ "$FIDVR_PROFILE" == "second_half_capscale" && "$FIDVR_CAPACITOR_KVAR_SCALE_WAS_SET" == "0" ]]; then
+    FIDVR_CAPACITOR_KVAR_SCALE="2.0"
+  fi
+fi
+FIDVR_PREFAULT_MIN_VOLTAGE_PU="${FIDVR_PREFAULT_MIN_VOLTAGE_PU:-0.95}"
+FIDVR_REGULATOR_LOW_VOLTAGE_PU="${FIDVR_REGULATOR_LOW_VOLTAGE_PU:-0.99}"
+FIDVR_REGULATOR_HIGH_VOLTAGE_PU="${FIDVR_REGULATOR_HIGH_VOLTAGE_PU:-1.03}"
+FIDVR_REGULATOR_DELAY_S="${FIDVR_REGULATOR_DELAY_S:-15.0}"
+FIDVR_REGULATOR_TAP_DELAY_S="${FIDVR_REGULATOR_TAP_DELAY_S:-2.0}"
+FIDVR_CAPACITOR_ON_VOLTAGE_PU="${FIDVR_CAPACITOR_ON_VOLTAGE_PU:-0.97}"
+FIDVR_CAPACITOR_OFF_VOLTAGE_PU="${FIDVR_CAPACITOR_OFF_VOLTAGE_PU:-1.03}"
+FIDVR_CAPACITOR_ON_DELAY_S="${FIDVR_CAPACITOR_ON_DELAY_S:-10.0}"
+FIDVR_CAPACITOR_OFF_DELAY_S="${FIDVR_CAPACITOR_OFF_DELAY_S:-2.0}"
+FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN="${FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN:-0}"
+FIDVR_CAPACITOR_KVAR_SCALE="${FIDVR_CAPACITOR_KVAR_SCALE:-1.0}"
+FIDVR_ENABLE_THERMAL_LOAD_RESTORATION="${FIDVR_ENABLE_THERMAL_LOAD_RESTORATION:-0}"
+FIDVR_THERMAL_RESTORE_MIN_DELAY_S="${FIDVR_THERMAL_RESTORE_MIN_DELAY_S:-180.0}"
+FIDVR_THERMAL_RESTORE_MAX_DELAY_S="${FIDVR_THERMAL_RESTORE_MAX_DELAY_S:-300.0}"
+FIDVR_THERMAL_RESTORE_RAMP_S="${FIDVR_THERMAL_RESTORE_RAMP_S:-30.0}"
+FIDVR_THERMAL_RESTORE_VOLTAGE_PU="${FIDVR_THERMAL_RESTORE_VOLTAGE_PU:-0.90}"
+FIDVR_THERMAL_RESTORE_DROPOUT_VOLTAGE_PU="${FIDVR_THERMAL_RESTORE_DROPOUT_VOLTAGE_PU:-0.70}"
+FIDVR_THERMAL_RESTORE_FRACTION="${FIDVR_THERMAL_RESTORE_FRACTION:-1.0}"
 BROKER_FEDERATES=$((FEEDER_COUNT + 1))
-FIDVR_MOTOR_GROUP_TRIP_OFFSETS="${FIDVR_MOTOR_GROUP_TRIP_OFFSETS:-0,0,0}"
-FIDVR_MOTOR_GROUP_RESTORE_OFFSETS="${FIDVR_MOTOR_GROUP_RESTORE_OFFSETS:-0,0,0}"
 if [[ -z "${FIDVR_TRIGGER_TIME:-}" ]]; then
   if [[ "$FIDVR_ENABLE" == "1" ]]; then
     FIDVR_TRIGGER_TIME="$TX_FAULT_TIME"
@@ -400,16 +550,27 @@ progress_monitor() {
 }
 
 # Start broker
+if ss -lntH "sport = :$PORT" | grep -q .; then
+  echo "Port $PORT is already listening. Stop the stale HELICS broker/run or choose PORT=... before starting a new co-simulation." >&2
+  exit 2
+fi
+
 BROKER_FEDERATES="$BROKER_FEDERATES" BROKER_PORT="$PORT" \
   "$PYTHON" -u broker.py > broker.log 2>&1 &
 BROKER_PID=$!
 
 # Wait for broker port
 for i in {1..50}; do
-  ss -lnt | grep -q ":$PORT" && break
+  if pid_is_alive "$BROKER_PID" && ss -lntH "sport = :$PORT" | grep -q .; then
+    break
+  fi
   sleep 0.1
 done
-ss -lnt | grep -q ":$PORT" || { echo "Broker not listening on $PORT"; exit 1; } # Verify broker is listening
+if ! pid_is_alive "$BROKER_PID"; then
+  echo "Broker process exited before listening on $PORT. See broker.log." >&2
+  exit 1
+fi
+ss -lntH "sport = :$PORT" | grep -q . || { echo "Broker not listening on $PORT"; exit 1; } # Verify broker is listening
 
 # Start transmission
 SIM_TARGET_TIME="$TARGET_TIME" \
@@ -430,6 +591,7 @@ TX_FAULT_TIME="$TX_FAULT_TIME" \
 TX_FAULT_DURATION="$TX_FAULT_DURATION" \
 TX_FAULT_RF="$TX_FAULT_RF" \
 TX_FAULT_XF="$TX_FAULT_XF" \
+TX_TDS_STEP="$TX_TDS_STEP" \
 TX_POSTFAULT_LINES="$TX_POSTFAULT_LINES" \
 TX_POSTFAULT_LINE="$TX_POSTFAULT_LINE" \
 TX_POSTFAULT_TRIP_DELAY="$TX_POSTFAULT_TRIP_DELAY" \
@@ -450,16 +612,31 @@ for i in $(seq 1 "$FEEDER_COUNT"); do
     COSIM_BASE_MVA="$COSIM_BASE_MVA" \
     DIST_LOAD_SCALE="$DIST_LOAD_SCALE" \
     FIDVR_ENABLE="$FIDVR_ENABLE" \
-    FIDVR_MOTOR_MODEL="$FIDVR_MOTOR_MODEL" \
     FIDVR_MOTOR_SHARE="$FIDVR_MOTOR_SHARE" \
-    FIDVR_MOTOR_GROUP_TRIP_OFFSETS="$FIDVR_MOTOR_GROUP_TRIP_OFFSETS" \
-    FIDVR_MOTOR_GROUP_RESTORE_OFFSETS="$FIDVR_MOTOR_GROUP_RESTORE_OFFSETS" \
     FIDVR_ENABLE_REG_CONTROL="$FIDVR_ENABLE_REG_CONTROL" \
     FIDVR_ENABLE_CAP_CONTROL="$FIDVR_ENABLE_CAP_CONTROL" \
     FIDVR_CAPACITOR_INITIAL_FRACTION="$FIDVR_CAPACITOR_INITIAL_FRACTION" \
+    FIDVR_CAPACITOR_ON_VOLTAGE_PU="$FIDVR_CAPACITOR_ON_VOLTAGE_PU" \
+    FIDVR_CAPACITOR_OFF_VOLTAGE_PU="$FIDVR_CAPACITOR_OFF_VOLTAGE_PU" \
+    FIDVR_CAPACITOR_ON_DELAY_S="$FIDVR_CAPACITOR_ON_DELAY_S" \
+    FIDVR_CAPACITOR_OFF_DELAY_S="$FIDVR_CAPACITOR_OFF_DELAY_S" \
+    FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN="$FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN" \
+    FIDVR_CAPACITOR_KVAR_SCALE="$FIDVR_CAPACITOR_KVAR_SCALE" \
     FIDVR_ALERT_SIGNAL="$FIDVR_ALERT_SIGNAL" \
     FIDVR_ALERT_BUS="$FIDVR_ALERT_BUS" \
     FIDVR_REGULATOR_MONITOR_BUS="$FIDVR_REGULATOR_MONITOR_BUS" \
+    FIDVR_REGULATOR_LOW_VOLTAGE_PU="$FIDVR_REGULATOR_LOW_VOLTAGE_PU" \
+    FIDVR_REGULATOR_HIGH_VOLTAGE_PU="$FIDVR_REGULATOR_HIGH_VOLTAGE_PU" \
+    FIDVR_REGULATOR_DELAY_S="$FIDVR_REGULATOR_DELAY_S" \
+    FIDVR_REGULATOR_TAP_DELAY_S="$FIDVR_REGULATOR_TAP_DELAY_S" \
+    FIDVR_ENABLE_THERMAL_LOAD_RESTORATION="$FIDVR_ENABLE_THERMAL_LOAD_RESTORATION" \
+    FIDVR_THERMAL_RESTORE_MIN_DELAY_S="$FIDVR_THERMAL_RESTORE_MIN_DELAY_S" \
+    FIDVR_THERMAL_RESTORE_MAX_DELAY_S="$FIDVR_THERMAL_RESTORE_MAX_DELAY_S" \
+    FIDVR_THERMAL_RESTORE_RAMP_S="$FIDVR_THERMAL_RESTORE_RAMP_S" \
+    FIDVR_THERMAL_RESTORE_VOLTAGE_PU="$FIDVR_THERMAL_RESTORE_VOLTAGE_PU" \
+    FIDVR_THERMAL_RESTORE_DROPOUT_VOLTAGE_PU="$FIDVR_THERMAL_RESTORE_DROPOUT_VOLTAGE_PU" \
+    FIDVR_THERMAL_RESTORE_FRACTION="$FIDVR_THERMAL_RESTORE_FRACTION" \
+    FIDVR_PREFAULT_MIN_VOLTAGE_PU="$FIDVR_PREFAULT_MIN_VOLTAGE_PU" \
     FIDVR_TRIGGER_TIME="$FIDVR_TRIGGER_TIME" \
     FIDVR_FAULT_DURATION="$FIDVR_FAULT_DURATION" \
     "$PYTHON" -u Distribution.py $i > feeder_${i}.log 2>&1 &
@@ -477,6 +654,7 @@ if [[ "$FINE_DT" == "$COARSE_DT" ]]; then
 else
   echo "  co-simulation step schedule: ${FINE_DT}s until ${COARSE_START}s, then ${COARSE_DT}s"
 fi
+echo "  transmission TDS step: $TX_TDS_STEP"
 echo "  transmission case: $TX_CASE_XLSX"
 echo "  transmission interface bus: $TX_INTERFACE_BUS"
 echo "  distribution case: $DIST_MASTER_DSS"
@@ -486,16 +664,23 @@ if [[ -n "$FIDVR_ALERT_BUS" ]]; then
   echo "  distribution alert bus: $FIDVR_ALERT_BUS"
 fi
 echo "  distribution load scale: $DIST_LOAD_SCALE"
-echo "  FIDVR motor model: $FIDVR_MOTOR_MODEL"
+echo "  FIDVR motor model: wecc_motor_d"
 echo "  FIDVR motor share: $FIDVR_MOTOR_SHARE"
-echo "  FIDVR motor trip offsets: $FIDVR_MOTOR_GROUP_TRIP_OFFSETS"
-echo "  FIDVR motor restore offsets: $FIDVR_MOTOR_GROUP_RESTORE_OFFSETS"
+echo "  FIDVR thermal load restoration: $FIDVR_ENABLE_THERMAL_LOAD_RESTORATION"
+echo "  FIDVR thermal restore window/ramp: ${FIDVR_THERMAL_RESTORE_MIN_DELAY_S}-${FIDVR_THERMAL_RESTORE_MAX_DELAY_S}s / ${FIDVR_THERMAL_RESTORE_RAMP_S}s"
+echo "  FIDVR thermal restore voltage/dropout: ${FIDVR_THERMAL_RESTORE_VOLTAGE_PU} pu / ${FIDVR_THERMAL_RESTORE_DROPOUT_VOLTAGE_PU} pu"
+echo "  FIDVR thermal restore fraction: $FIDVR_THERMAL_RESTORE_FRACTION"
+echo "  FIDVR pre-fault minimum voltage target: $FIDVR_PREFAULT_MIN_VOLTAGE_PU"
 echo "  FIDVR regulator control: $FIDVR_ENABLE_REG_CONTROL"
 if [[ -n "$FIDVR_REGULATOR_MONITOR_BUS" ]]; then
   echo "  FIDVR regulator monitor bus: $FIDVR_REGULATOR_MONITOR_BUS"
 fi
+echo "  FIDVR regulator band/delays: [${FIDVR_REGULATOR_LOW_VOLTAGE_PU}, ${FIDVR_REGULATOR_HIGH_VOLTAGE_PU}] pu / ${FIDVR_REGULATOR_DELAY_S}s, tap ${FIDVR_REGULATOR_TAP_DELAY_S}s"
 echo "  FIDVR capacitor control: $FIDVR_ENABLE_CAP_CONTROL"
 echo "  FIDVR capacitor initial fraction: $FIDVR_CAPACITOR_INITIAL_FRACTION"
+echo "  FIDVR capacitor on/off: on<=${FIDVR_CAPACITOR_ON_VOLTAGE_PU} pu after ${FIDVR_CAPACITOR_ON_DELAY_S}s, off>=${FIDVR_CAPACITOR_OFF_VOLTAGE_PU} pu after ${FIDVR_CAPACITOR_OFF_DELAY_S}s"
+echo "  FIDVR capacitor lockout after open: $FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN"
+echo "  FIDVR capacitor kvar scale: $FIDVR_CAPACITOR_KVAR_SCALE"
 echo "  FIDVR trigger time: $FIDVR_TRIGGER_TIME"
 echo "  FIDVR fault duration: $FIDVR_FAULT_DURATION"
 echo "  co-simulation base MVA: $COSIM_BASE_MVA"

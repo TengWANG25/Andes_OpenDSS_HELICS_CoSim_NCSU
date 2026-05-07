@@ -467,6 +467,26 @@ def _apply_zoom_ylim(ax, series_list, pad_ratio: float = 0.1, min_pad: float = 1
     ax.set_ylim(vmin - pad, vmax + pad)
 
 
+def _apply_manual_xlim(ax_or_axes, x_limits):
+    if x_limits is None:
+        return
+    if isinstance(ax_or_axes, np.ndarray):
+        for axis in ax_or_axes.flat:
+            axis.set_xlim(*x_limits)
+        return
+    if isinstance(ax_or_axes, (list, tuple)):
+        for axis in ax_or_axes:
+            axis.set_xlim(*x_limits)
+        return
+    ax_or_axes.set_xlim(*x_limits)
+
+
+def _apply_manual_voltage_ylim(ax, voltage_y_limits):
+    if voltage_y_limits is None:
+        return
+    ax.set_ylim(*voltage_y_limits)
+
+
 def _time_value_in_plot_units(t_seconds: float, xlabel: str) -> float:
     if "hours" in xlabel.lower():
         return t_seconds / 3600.0
@@ -733,7 +753,13 @@ def _format_genrou_identity(row: pd.Series, idx_col: str, bus_col: str) -> str:
     return f"{idx} @ bus {int(bus)}"
 
 
-def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
+def make_plots(
+    df: pd.DataFrame,
+    out_dir: Path,
+    bus: int = 2,
+    x_limits=None,
+    voltage_y_limits=None,
+):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     by_t = df.groupby("t_granted", as_index=False).last().sort_values("t_granted")
@@ -814,9 +840,11 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         _add_fidvr_stage_overlays(plt.gca(), fidvr_stage_intervals, xlabel)
         _add_disturbance_overlays(plt.gca(), disturbance_intervals, xlabel)
         _apply_zoom_ylim(plt.gca(), [d_v["Vmag"]], min_pad=5e-4)
+        _apply_manual_voltage_ylim(plt.gca(), voltage_y_limits)
     plt.xlabel(xlabel)
     plt.ylabel(f"Bus {bus} Voltage Magnitude |V| (pu)")
     plt.title(f"Bus {bus} Voltage Magnitude vs Time")
+    _apply_manual_xlim(plt.gca(), x_limits)
     plt.tight_layout()
     plt.savefig(out_dir / f"bus{bus}_voltage_vs_time.png", dpi=300)
     plt.close()
@@ -864,13 +892,16 @@ def make_plots(df: pd.DataFrame, out_dir: Path, bus: int = 2):
         _add_fidvr_stage_overlays(ax[1], fidvr_stage_intervals, xlabel)
         _add_disturbance_overlays(ax[1], disturbance_intervals, xlabel)
         ax[1].set_ylabel(f"Bus {bus} |V| (pu)")
-        _apply_zoom_ylim(ax[1], [d_v["Vmag"]], min_pad=5e-4)
+        #_apply_zoom_ylim(ax[1], [d_v["Vmag"]], min_pad=5e-4)
+        ax[1].set_ylim(0.4, 1.1)
+        _apply_manual_voltage_ylim(ax[1], voltage_y_limits)
         ax[1].set_title(f"Transmission bus {bus} voltage")
         ax[1].legend()
     ax[1].set_xlabel(xlabel)
     ax[1].grid(True)
 
     fig.suptitle("ANDES-OpenDSS Co-simulation: Load and Voltage vs Time", fontsize=14)
+    _apply_manual_xlim(ax, x_limits)
     plt.tight_layout()
     plt.savefig(out_dir / f"total_pq_and_bus{bus}_voltage_vs_time.png", dpi=300)
     plt.close(fig)
@@ -1245,6 +1276,22 @@ def main():
     parser.add_argument("--log", type=str, default="transmission.log", help="Path to transmission.log")
     parser.add_argument("--out", type=str, default=None, help="Output folder (default: same folder as log)")
     parser.add_argument("--bus", type=int, default=None, help="Bus index for |V| (default: detect interface bus)")
+    parser.add_argument(
+        "--xlim",
+        type=float,
+        nargs=2,
+        metavar=("XMIN", "XMAX"),
+        default=None,
+        help="Optional shared x-axis limits in seconds for exported plots.",
+    )
+    parser.add_argument(
+        "--voltage-ylim",
+        type=float,
+        nargs=2,
+        metavar=("YMIN", "YMAX"),
+        default=None,
+        help="Optional shared y-axis limits in pu for voltage plots.",
+    )
     args = parser.parse_args()
 
     log_path = Path(args.log).expanduser().resolve()
@@ -1257,9 +1304,21 @@ def main():
     print(f"[INFO] Log: {log_path}")
     print(f"[INFO] Out: {out_dir}")
     print(f"[INFO] Bus: {bus}")
+    if args.xlim is not None:
+        print(f"[INFO] X limits: {tuple(args.xlim)}")
+    if args.voltage_ylim is not None:
+        print(f"[INFO] Voltage Y limits: {tuple(args.voltage_ylim)}")
 
     df = load_transmission_plot_data(log_path, bus=bus)
-    make_plots(df, out_dir, bus=bus)
+    make_plots(
+        df,
+        out_dir,
+        bus=bus,
+        x_limits=tuple(args.xlim) if args.xlim is not None else None,
+        voltage_y_limits=tuple(args.voltage_ylim)
+        if args.voltage_ylim is not None
+        else None,
+    )
 
 
 if __name__ == "__main__":

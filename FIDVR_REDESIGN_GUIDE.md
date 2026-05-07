@@ -1,268 +1,116 @@
-# FIDVR Co-Simulation Redesign Guide
+# FIDVR Co-Simulation Guide
 
-## Overview
+This repository now has a single FIDVR motor path: the WECC/LD1PAC Motor D
+implementation in `Distribution.py`. The old staged surrogate, companion-load,
+and `IndMach012` experiment paths have been removed from the active run path so
+the study is easier to explain and audit.
 
-This guide explains the redesigned FIDVR co-simulation framework that replaces line-trip-first scenarios with **fault-first scenarios** to create realistic voltage sag and delayed motor recovery.
+## Current Framework
 
-### What Changed
+- Transmission side: ANDES applies the selected temporary bus fault, optionally
+  opens selected post-fault lines after clearing, and publishes the interface-bus
+  voltage to HELICS.
+- Distribution side: OpenDSS receives the interface voltage, solves the feeder,
+  and reports aggregate feeder P/Q plus monitored distribution-bus voltage.
+- Motor model: each selected single-phase OpenDSS load is split into a static
+  portion and one `Load.weccmd_*` Motor D terminal injection. The same terminal
+  injection remains in place through running, stall, undervoltage contactor
+  dropout, thermal trip, restart, and thermal load restoration.
+- Feeder controls: capacitor and regulator controls are optional. They are
+  disabled unless their `FIDVR_ENABLE_*_CONTROL` variable is set.
 
-**Before:**
-- Initiated by line trip (slow, weak event)
-- Fixed 0.03s co-simulation step (too coarse for fault dynamics)
-- Multiple feeders by default (harder to validate)
-- Scripted load stages (hard to debug motor physics)
+## Recommended Runs
 
-**After:**
-- Initiated by temporary fault at interface bus (fast, realistic event)
-- Fine time stepping: 0.005s around fault, 0.02s after recovery (captures dynamics)
-- Default 1 feeder for validation (simplifies debugging)
-- Improved motor model defaults (stronger Q surge, longer recovery)
-
----
-
-## Test Cases A–D
-
-Run each case in sequence to validate the motor physics before adding complexity.
-
-### Case A: Baseline (Fault Only, No Motors)
-**Purpose:** Verify transmission-side voltage sag and recovery.
+Baseline fault-only check:
 
 ```bash
-FIDVR_ENABLE=0 SIM_TARGET_TIME=4.0 bash run.sh
+FIDVR_ENABLE=0 SIM_TARGET_TIME=4.0 ./run.sh
 ```
 
-**Expected Results:**
-- Interface bus voltage drops sharply at t=1.0s
-- Recovers within ~0.5s after fault clears (t=1.06s)
-- No feeder interaction; flat Q (only network losses)
-
-**Plot Check:** `transmission_timeseries.csv`
-- Look for sharp dip in `Vmag` at t=1.0s, recovery by t~1.2s
-
----
-
-### Case B: Fault + Motors (Controls Frozen)
-**Purpose:** Isolate motor-driven delayed recovery from control actions.
+Motor D only, with feeder controls frozen:
 
 ```bash
-FIDVR_ENABLE=1 DIST_LOAD_SCALE=2.0 SIM_TARGET_TIME=10.0 bash run.sh
+FIDVR_ENABLE=1 FIDVR_PROFILE=weak_bus14 \
+FIDVR_ENABLE_CAP_CONTROL=0 FIDVR_ENABLE_REG_CONTROL=0 \
+SIM_TARGET_TIME=60.0 ./run.sh
 ```
 
-**Expected Results:**
-- Interface voltage dips at t=1.0s (same as Case A)
-- Feeder motor bus dips *deeper* than interface (Q surge from stalled load)
-- Voltage stays depressed for 3–5 seconds (thermal trip / reconnect delays)
-- Q_total rises during stall, then falls as motors reconnect
-
-**Plot Check:** `transmission_timeseries.csv` + `feeder_1_fidvr_alerts.csv`
-- `Vmag` at t=1.0–3.0s: interface recovers faster than motor load recovers
-- `Q_total`: peak 0.5–2s after fault, then decay over 5–10s
-- Motor alerts: stall at t~1.06s, thermal trip at t~17s, reconnect at t~20s
-
-**Key Insight:** If Q does NOT rise during stall → motor model not active or load too small.
-
----
-
-### Case C: Fault + Motors + Controls (Regulators & Capacitors Active)
-**Purpose:** Add feeder voltage support; see how controls modify recovery.
+Second-half FIDVR controls, including capacitor lockout and thermal load
+restoration:
 
 ```bash
-FIDVR_ENABLE=1 DIST_LOAD_SCALE=2.0 SIM_TARGET_TIME=10.0 bash run.sh
+FIDVR_ENABLE=1 FIDVR_PROFILE=second_half \
+FIDVR_ENABLE_THERMAL_LOAD_RESTORATION=1 \
+SIM_TARGET_TIME=120.0 ./run.sh
 ```
 
-**Expected Results:**
-- Same sag as Cases A–B at t=1.0s
-- Capacitors switch ON during low voltage (0.5–2s after fault)
-- Regulators tap up to raise feeder voltage (2–5s phase)
-- Recovery may be faster or overshoot slightly (depending on control tuning)
-- Delayed recovery still visible (motor holds it down)
+## Main Parameters
 
-**Plot Check:** `feeder_1_fidvr_alerts.csv`
-- Capacitor switch events (~1–2s)
-- Regulator tap changes (~0.5–3s window)
-- Motor stall/thermal/reconnect timeline
+Motor size and placement:
 
----
+| Variable | Meaning |
+| --- | --- |
+| `FIDVR_MOTOR_LOADS` | OpenDSS load names converted into Motor D injections |
+| `FIDVR_MOTOR_SHARE` | Fraction of each selected load represented as Motor D |
+| `DIST_LOAD_SCALE` | Feeder-wide load multiplier before Motor D splitting |
 
-### Case D: Fault + Secondary Line Outage (Later Stress)
-**Purpose:** Demonstrate that controls + motors can handle multiple stresses.
+WECC Motor D:
 
-```bash
-FIDVR_ENABLE=1 DIST_LOAD_SCALE=2.0 TX_DISTURBANCE_LINES="Line_3" \
-SIM_TARGET_TIME=15.0 bash run.sh
-```
+| Variable | Meaning |
+| --- | --- |
+| `FIDVR_WECC_COMPPF` | Compressor running power factor |
+| `FIDVR_WECC_VSTALL` | Stall voltage threshold |
+| `FIDVR_WECC_TSTALL` | Delay before stalled state is accepted |
+| `FIDVR_WECC_RSTALL`, `FIDVR_WECC_XSTALL` | Locked-rotor equivalent impedance |
+| `FIDVR_WECC_FRST`, `FIDVR_WECC_VRST`, `FIDVR_WECC_TRST` | Restart fraction, voltage, and delay |
+| `FIDVR_WECC_TH1T`, `FIDVR_WECC_TH2T`, `FIDVR_WECC_TTH` | Thermal protection curve points and time constant |
+| `FIDVR_WECC_UVTR1`, `FIDVR_WECC_TTR1`, `FIDVR_WECC_UVTR2`, `FIDVR_WECC_TTR2` | Undervoltage trip thresholds and delays |
 
-**Expected Results:**
-- Fault at t=1.0–1.06s (same as A–C)
-- Recovery on track by t~2s
-- Line trip event at t~1.11s (after fault clears + 50ms safety margin)
-- Secondary voltage dip, faster recovery due to already-raised controls
+Thermal load restoration:
 
-**Note:** This case only works if Case B & C show convincing delayed recovery.
+| Variable | Meaning |
+| --- | --- |
+| `FIDVR_ENABLE_THERMAL_LOAD_RESTORATION` | Enables delayed reconnection after thermal trip |
+| `FIDVR_THERMAL_RESTORE_MIN_DELAY_S`, `FIDVR_THERMAL_RESTORE_MAX_DELAY_S` | Reconnection delay window |
+| `FIDVR_THERMAL_RESTORE_RAMP_S` | Ramp duration after reconnection begins |
+| `FIDVR_THERMAL_RESTORE_VOLTAGE_PU` | Voltage needed to continue restoration |
+| `FIDVR_THERMAL_RESTORE_DROPOUT_VOLTAGE_PU` | Voltage below which restoration pauses |
+| `FIDVR_THERMAL_RESTORE_FRACTION` | Fraction of thermally tripped load allowed to return |
 
----
+Capacitor and regulator controls:
 
-## Running Experiments
-
-### Single Case (e.g., Case C)
-
-```bash
-FIDVR_ENABLE=1 DIST_LOAD_SCALE=2.0 SIM_TARGET_TIME=10.0 bash run.sh
-```
-
-### Multiple Cases (A→B→C)
-
-```bash
-# Case A: Baseline
-FIDVR_ENABLE=0 SIM_TARGET_TIME=4.0 bash run.sh
-mv transmission_timeseries.csv transmission_case_a.csv
-
-# Case B: Motors
-FIDVR_ENABLE=1 DIST_LOAD_SCALE=2.0 SIM_TARGET_TIME=10.0 bash run.sh
-mv transmission_timeseries.csv transmission_case_b.csv
-mv feeder_1_fidvr_alerts.csv feeder_1_case_b_alerts.csv
-
-# Case C: Motors + Controls
-FIDVR_ENABLE=1 DIST_LOAD_SCALE=2.0 SIM_TARGET_TIME=10.0 bash run.sh
-mv transmission_timeseries.csv transmission_case_c.csv
-mv feeder_1_fidvr_alerts.csv feeder_1_case_c_alerts.csv
-```
-
----
-
-## Plotting & Analysis
-
-Use your existing tools to compare cases:
-
-```bash
-python plot_transmission_fault_scenarios.py
-# (Plots transmission_case_*.csv side-by-side)
-
-python plot_from_logs.py --log transmission.log
-# (Shows progress over time)
-```
-
-### Key Columns to Watch
-
-**transmission_timeseries.csv:**
-- `Vmag` (interface bus voltage magnitude)
-- `Vang_rad` (angle, should be stable)
-- `P_total`, `Q_total` (aggregated feeder power)
-- `t_granted` (co-simulation time)
-
-**feeder_1_fidvr_alerts.csv:**
-- `time` (when event occurred)
-- `alert_type` (stall, thermal, reconnect, cap_switch, reg_tap_change)
-- `bus_name` (which bus was affected)
-- `value` (voltage or load state change)
-
----
-
-## Tuning Recommendations
-
-If results don't match expected behavior, adjust these (in run.sh or manually):
-
-### For Stronger Motor Stall (Case B)
-```bash
-# Increase motor share:
-FIDVR_MOTOR_SHARE=0.70 bash run.sh
-
-# Raise reactive scaling:
-FIDVR_MOTOR_STALL_KVAR_SCALE=8.0 bash run.sh
-
-# Increase load scale:
-DIST_LOAD_SCALE=3.0 bash run.sh
-```
-
-### For Faster Recovery
-```bash
-# Reduce thermal trip time:
-FIDVR_MOTOR_THERMAL_TRIP_TIME_S=12.0 bash run.sh
-
-# Faster reconnect:
-FIDVR_MOTOR_RECONNECT_DELAY_S=5.0 bash run.sh
-```
-
-### For Slower Recovery (More Realistic FIDVR)
-```bash
-# Extend thermal trip:
-FIDVR_MOTOR_THERMAL_TRIP_TIME_S=20.0 bash run.sh
-
-# Delay reconnect:
-FIDVR_MOTOR_RECONNECT_DELAY_S=15.0 bash run.sh
-```
-
----
+| Variable | Meaning |
+| --- | --- |
+| `FIDVR_ENABLE_CAP_CONTROL` | Enables delayed capacitor on/off logic |
+| `FIDVR_CAPACITOR_INITIAL_FRACTION` | Initial fraction of selected capacitor banks online |
+| `FIDVR_CAPACITOR_KVAR_SCALE` | Scales selected existing capacitor kvar |
+| `FIDVR_CAPACITOR_OFF_VOLTAGE_PU`, `FIDVR_CAPACITOR_OFF_DELAY_S` | Overvoltage trip rule |
+| `FIDVR_CAPACITOR_ON_VOLTAGE_PU`, `FIDVR_CAPACITOR_ON_DELAY_S` | Low-voltage close rule |
+| `FIDVR_CAPACITOR_LOCKOUT_AFTER_OPEN` | Keeps opened capacitors offline |
+| `FIDVR_ENABLE_REG_CONTROL` | Enables delayed regulator tap control |
+| `FIDVR_REGULATOR_LOW_VOLTAGE_PU`, `FIDVR_REGULATOR_HIGH_VOLTAGE_PU` | Regulator deadband limits |
+| `FIDVR_REGULATOR_DELAY_S`, `FIDVR_REGULATOR_TAP_DELAY_S` | First action and subsequent tap delays |
 
 ## Validation Checklist
 
-- [ ] Case A: Fault creates clear transmission voltage dip?
-- [ ] Case A: Recovery time < 1s after fault clears?
-- [ ] Case B: Feeder Q rises during stall (not flat)?
-- [ ] Case B: Delayed recovery visible (V stays low 3–5s)?
-- [ ] Case C: Caps/regs help but don't completely override motors?
-- [ ] Case D: Secondary line trip doesn't collapse system?
-- [ ] No solver convergence warnings in logs?
+- Fault-only case creates a clear voltage sag and recovers quickly after clearing.
+- Motor D case shows a reactive power rise during the delayed recovery interval.
+- Motor logs show physically named states: running, stalled, tripped, restoring.
+- Capacitor events only occur when capacitor control is enabled and the monitored
+  voltage satisfies the delayed threshold logic.
+- Regulator tap changes only occur when regulator control is enabled and the
+  monitored voltage remains outside the deadband long enough.
+- Thermal load restoration is only claimed when
+  `FIDVR_ENABLE_THERMAL_LOAD_RESTORATION=1` and the log shows restoration
+  fractions increasing.
 
----
+## Plotting
 
-## New Environment Variables
+```bash
+python3 plot_distribution_from_logs.py
+python3 plot_from_logs.py
+```
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `TX_FAULT_TIME` | 1.0 | Fault initiation time (s) |
-| `TX_FAULT_DURATION` | 0.06 | Fault duration (s) |
-| `SIM_FINE_DT` | 0.005 | Fine co-sim step (s) |
-| `SIM_COARSE_DT` | 0.02 | Coarse co-sim step (s) |
-| `SIM_COARSE_START` | 1.5 | When to switch to coarse step (s) |
-| `TX_TDS_STEP` | auto | Transmission internal step (s) |
-| `DIST_LOAD_SCALE` | 1.0 | Distribution load multiplier |
-| `FIDVR_MOTOR_SHARE` | 0.65 | Motor fraction of load |
-| `FIDVR_MOTOR_STALL_VOLTAGE_PU` | 0.71 | Stall threshold (pu) |
-| `FIDVR_MOTOR_STALL_KVAR_SCALE` | 6.5 | Reactive multiplier during stall |
-| `FIDVR_MOTOR_RECONNECT_DELAY_S` | 10.0 | Motor reconnect delay (s) |
-
----
-
-## Troubleshooting
-
-### Simulation Crashes or Times Out
-- Check broker is running: `ss -lnt | grep 23406`
-- Reduce `SIM_FINE_DT` or `TX_TDS_STEP` if numerical issues
-- Ensure case file exists: `ls -la ieee14_fault.xlsx`
-
-### No Motor Effect in Case B
-- Increase `DIST_LOAD_SCALE` (try 3.0 or 5.0)
-- Raise `FIDVR_MOTOR_SHARE` (try 0.75–0.90)
-- Verify `FIDVR_ENABLE=1` is set
-- Check that `feeder_1_fidvr_alerts.csv` shows stall events
-
-### Too Fast Recovery
-- Reduce `FIDVR_MOTOR_THERMAL_TRIP_TIME_S`
-- Lower stall clear voltage: `FIDVR_MOTOR_STALL_CLEAR_VOLTAGE_PU=0.92`
-- Increase reconnect delay: `FIDVR_MOTOR_RECONNECT_DELAY_S=15.0`
-
----
-
-## Next Steps After Validation
-
-1. **Scale up:** Once Cases A–C are convincing, increase `FEEDER_COUNT` to 2–3
-2. **Extend duration:** Try `SIM_TARGET_TIME=60.0` to see long-term stability
-3. **Multiple scenarios:** Test different fault durations, locations, load scales
-4. **Paper plots:** Generate publication-ready figures with Cases A–C
-5. **Control studies:** Disable/enable caps and regs separately to quantify their impact
-
----
-
-## Reference: Original vs. Redesigned Parameters
-
-| Parameter | Original | Redesigned | Why |
-|-----------|----------|-----------|-----|
-| Initiator | Line trip | Fault | More realistic sag depth/speed |
-| `SIM_FINE_DT` | 0.03s | 0.005s | Capture fault transients |
-| `SIM_COARSE_DT` | 0.03s | 0.02s | Finer resolution post-fault |
-| `FEEDER_COUNT` | 2 | 1 | Easier validation |
-| Motor Reconnect | 6s | 10s | Longer delayed recovery |
-| Motor Q Scale | 5.0 | 6.5 | Stronger reactive surge |
-| Motor Stall V | 0.72 | 0.71 | Captures deeper sag |
-
+Use `feeder_1.log`, `feeder_1_fidvr_alerts.csv`,
+`feeder_1_distribution_voltage.csv`, and `transmission_timeseries.csv` to trace
+the event chronology.
