@@ -643,6 +643,21 @@ for i in $(seq 1 "$FEEDER_COUNT"); do
   FEED_PIDS+=("$!")
 done # Start distribution feeders
 
+# Catch configuration/path errors before the transmission federate waits on a
+# feeder that already exited. The EXIT trap cleans up the broker/transmission.
+sleep 0.5
+STARTUP_EXIT=0
+for i in $(seq 1 "$FEEDER_COUNT"); do
+  pid="${FEED_PIDS[$((i - 1))]}"
+  if ! pid_is_alive "$pid"; then
+    STARTUP_EXIT=1
+    echo "Feeder $i exited during startup. See feeder_${i}.log." >&2
+  fi
+done
+if [[ "$STARTUP_EXIT" != "0" ]]; then
+  exit 1
+fi
+
 echo "Simulation running..."
 echo "  broker pid: $BROKER_PID"
 echo "  transmission pid: $TRANS_PID"

@@ -312,9 +312,18 @@ def get_feeder_power_topic(feeder_idx: int) -> str:
 def get_distribution_case_path(script_dir: Path) -> Path:
     case_value = os.environ.get("DIST_MASTER_DSS", "13Bus/IEEE13Nodeckt.dss")
     case_path = Path(case_value)
-    if not case_path.is_absolute():
-        case_path = script_dir / case_path
-    return case_path.resolve()
+    if case_path.is_absolute():
+        return case_path.resolve()
+
+    # The FIDVR scripts may live in a subfolder while shared OpenDSS cases stay
+    # at the repository root. Prefer the script-local path, then fall back to
+    # the parent folder so the default 13Bus case survives that layout.
+    for base_dir in (script_dir, script_dir.parent, Path.cwd()):
+        candidate = (base_dir / case_path).resolve()
+        if candidate.exists():
+            return candidate
+
+    return (script_dir / case_path).resolve()
 
 
 def get_distribution_voltage_bus() -> str:
