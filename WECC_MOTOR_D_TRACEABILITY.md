@@ -58,8 +58,7 @@ The report is internally inconsistent for `Rstall`/`Xstall`:
 The current code follows p. 58 because that section explicitly discusses the
 stalling parameter validation cases. 
 
-## Implementation Caveats
-
+## Notification
 - `Distribution.py` implements Motor D as controlled OpenDSS `Load.weccmd_*`
   terminal injections.
 - The running and stalled `P/Q` equations are evaluated in the feeder federate,
