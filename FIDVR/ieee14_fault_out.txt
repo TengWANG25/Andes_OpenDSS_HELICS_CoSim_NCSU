@@ -3,7 +3,7 @@ Copyright (C) 2015-2026 Hantao Cui
 
 ANDES comes with ABSOLUTELY NO WARRANTY
 Case file: /home/teng/benchmark_118_10_8500_Andes_OpenDSS/FIDVR/ieee14_fault.xlsx
-Report time: 05/07/2026 06:06:01 PM
+Report time: 05/13/2026 10:16:41 PM
 
 Power flow converged in 4 iterations.
 Flat-start: No

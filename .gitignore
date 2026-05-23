@@ -1,54 +1,20 @@
-# Simulation outputs and runtime logs
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Simulation outputs
 *.log
-*.npz
-*.sif
 *.out
 *.lst
-__pycache__/
+*.npz
+*.csv
+*.png
+*.sif
 
-# Windows/WSL metadata files
+# Local config
+.env
+.vscode/
+.idea/
 *:Zone.Identifier
-
-# Local agent/editor/tooling files
-.adal/
-.agents/
-.aider-desk/
-.augment/
-.bob/
-.claude/
-.codeartsdoer/
-.codebuddy/
-.codemaker/
-.codestudio/
-.commandcode/
-.continue/
-.cortex/
-.crush/
-.devin/
-.factory/
-.forge/
-.goose/
-.iflow/
-.junie/
-.kilocode/
-.kiro/
-.kode/
-.mcpjam/
-.mux/
-.neovate/
-.openhands/
-.pi/
-.pochi/
-.qoder/
-.qwen/
-.roo/
-.rovodev/
-.tabnine/
-.trae/
-.venv/
-.vibe/
-.windsurf/
-.zencoder/
-.codex
-skills/
-skills-lock.json

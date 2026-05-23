@@ -7,6 +7,8 @@ resulting feeder complex power back to the transmission federate.
 """
 
 # Import libraries 
+import csv
+import copy
 import math
 import os
 import sys
@@ -36,6 +38,41 @@ ITER_STATE_NAME = {
     h.HELICS_ITERATION_RESULT_ERROR: "ERROR",
     h.HELICS_ITERATION_RESULT_HALTED: "HALTED",
 }
+
+IEEE13_NODE_BUSES = (
+    "650",
+    "632",
+    "633",
+    "634",
+    "645",
+    "646",
+    "671",
+    "675",
+    "680",
+    "684",
+    "611",
+    "652",
+    "692",
+)
+
+ALL_BUS_VOLTAGE_COLUMNS = [
+    "feeder",
+    "iter",
+    "t_granted",
+    "state",
+    "bus",
+    "node_count",
+    "vavg_pu",
+    "vpos_pu",
+    "vneg_pu",
+    "vzero_pu",
+    "va_pu",
+    "vb_pu",
+    "vc_pu",
+    "anga_deg",
+    "angb_deg",
+    "angc_deg",
+]
 
 # =============================================================================
 # Data Models
@@ -326,8 +363,38 @@ def get_distribution_case_path(script_dir: Path) -> Path:
     return (script_dir / case_path).resolve()
 
 
+def get_output_dir(script_dir: Path) -> Path:
+    output_value = (
+        os.environ.get("COSIM_OUTPUT_DIR")
+        or os.environ.get("RUN_OUTPUT_DIR")
+        or os.environ.get("FIDVR_OUTPUT_DIR")
+    )
+    if not output_value:
+        return script_dir
+
+    output_dir = Path(output_value)
+    if not output_dir.is_absolute():
+        output_dir = script_dir / output_dir
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
 def get_distribution_voltage_bus() -> str:
     return os.environ.get("DIST_VOLTAGE_BUS", "650").strip()
+
+
+def get_all_bus_voltage_logging_enabled() -> bool:
+    return get_env_bool("DIST_LOG_ALL_BUS_VOLTAGES", True)
+
+
+def get_all_bus_voltage_buses() -> tuple[str, ...]:
+    value = os.environ.get("DIST_ALL_BUS_VOLTAGE_BUSES", "ieee13").strip()
+    if not value or value.lower() == "ieee13":
+        return IEEE13_NODE_BUSES
+    if value.lower() in {"all", "*"}:
+        return tuple(str(name) for name in dss.Circuit.AllBusNames())
+    return tuple(token for token in value.replace(",", " ").split() if token)
 
 
 def get_cosim_base_mva() -> float:
@@ -643,6 +710,57 @@ def get_bus_voltage_snapshot(bus_name: str) -> dict:
     }
 
 
+def initialize_all_bus_voltage_csv(csv_path: Path) -> None:
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        csv.DictWriter(handle, fieldnames=ALL_BUS_VOLTAGE_COLUMNS).writeheader()
+
+
+def append_all_bus_voltage_rows(
+    csv_path: Path,
+    feeder_idx: int,
+    iter_count: int,
+    current_time: float,
+    state: str,
+    bus_names: tuple[str, ...],
+) -> None:
+    if not bus_names:
+        return
+
+    rows = []
+    for bus_name in bus_names:
+        try:
+            snapshot = get_bus_voltage_snapshot(bus_name)
+        except RuntimeError:
+            continue
+        rows.append(
+            {
+                "feeder": feeder_idx,
+                "iter": iter_count,
+                "t_granted": current_time,
+                "state": state,
+                "bus": snapshot["bus"],
+                "node_count": len(snapshot["phase_mags"]),
+                "vavg_pu": snapshot["avg_mag"],
+                "vpos_pu": snapshot["positive_seq_mag"],
+                "vneg_pu": snapshot["negative_seq_mag"],
+                "vzero_pu": snapshot["zero_seq_mag"],
+                "va_pu": _phase_value(snapshot["phase_mags"], 1),
+                "vb_pu": _phase_value(snapshot["phase_mags"], 2),
+                "vc_pu": _phase_value(snapshot["phase_mags"], 3),
+                "anga_deg": _phase_value(snapshot["phase_angles"], 1),
+                "angb_deg": _phase_value(snapshot["phase_angles"], 2),
+                "angc_deg": _phase_value(snapshot["phase_angles"], 3),
+            }
+        )
+
+    if not rows:
+        return
+
+    with csv_path.open("a", newline="", encoding="utf-8") as handle:
+        csv.DictWriter(handle, fieldnames=ALL_BUS_VOLTAGE_COLUMNS).writerows(rows)
+
+
 # =============================================================================
 # OpenDSS Case Introspection and Device Editing, the bridge between Python and the OpenDSS feeder model.
 # =============================================================================
@@ -875,9 +993,11 @@ def _wecc_motor_d_running_pq_pu(v_pu: float, fidvr: FidvrConfig) -> tuple[float,
     comp_pf = max(1e-6, min(0.999999, fidvr.wecc_comp_pf))
     q0 = math.tan(math.acos(comp_pf)) - 6.0 * max(0.0, 1.0 - vbrk) ** 2.0
 
+    # If the voltage is higher than the stalling voltage break point, the motor is running at full load with a power factor that depends on the voltage.
     if v > vbrk:
         return 1.0, max(0.0, q0 + 6.0 * (v - vbrk) ** 2.0)
 
+    # If the voltage is lower than the stalling voltage break point, the motor is running at another state.
     if v > _wecc_motor_d_vstall_break(fidvr):
         return (
             1.0 + 12.0 * (vbrk - v) ** 3.2,
@@ -1897,13 +2017,18 @@ def solve_distribution_from_source(
 SCRIPT_DIR = Path(__file__).resolve().parent
 DIST_MASTER_DSS = get_distribution_case_path(SCRIPT_DIR)
 DIST_VOLTAGE_BUS = get_distribution_voltage_bus()
-FEEDER_ALERT_CSV_PATH = SCRIPT_DIR / f"feeder_{feeder_index}_fidvr_alerts.csv"
+OUTPUT_DIR = get_output_dir(SCRIPT_DIR)
+FEEDER_ALERT_CSV_PATH = OUTPUT_DIR / f"feeder_{feeder_index}_fidvr_alerts.csv"
+FEEDER_ALL_BUS_VOLTAGE_CSV_PATH = (
+    OUTPUT_DIR / f"feeder_{feeder_index}_all_bus_voltages.csv"
+)
 COSIM_BASE_MVA = get_cosim_base_mva()
 DIST_LOAD_SCALE = get_distribution_load_scale()
 BROKER_URL = get_broker_url()
 VOLTAGE_TOPIC = get_voltage_topic()
 POWER_TOPIC = get_feeder_power_topic(feeder_index)
 HELICS_UNINTERRUPTIBLE = get_env_bool("HELICS_UNINTERRUPTIBLE", False)
+LOG_ALL_BUS_VOLTAGES = get_all_bus_voltage_logging_enabled()
 disturbance = get_disturbance_config()
 fine_dt, coarse_dt, coarse_start = get_cosim_step_config(disturbance)
 fidvr = get_fidvr_config()
@@ -1938,7 +2063,7 @@ print(
     f"power_topic={POWER_TOPIC} voltage_topic={VOLTAGE_TOPIC} "
     f"broker={BROKER_URL} interface_base={COSIM_BASE_MVA:.3f} MVA "
     f"load_scale={DIST_LOAD_SCALE:.3f} "
-    f"uninterruptible={HELICS_UNINTERRUPTIBLE}"
+    f"uninterruptible={HELICS_UNINTERRUPTIBLE} output_dir={OUTPUT_DIR}"
 )
 if abs(fine_dt - coarse_dt) < 1e-12:
     print(f"Feeder: co-simulation step schedule = constant {fine_dt:.3f}s")
@@ -1983,6 +2108,14 @@ dss.Text.Command(f'Compile "{DIST_MASTER_DSS}"')
 dss.Text.Command("set controlmode=off")
 dss.Text.Command("set mode=snap")
 dss.Text.Command("set maxcontroliter=100")
+
+ALL_BUS_VOLTAGE_BUSES = get_all_bus_voltage_buses() if LOG_ALL_BUS_VOLTAGES else ()
+if LOG_ALL_BUS_VOLTAGES:
+    initialize_all_bus_voltage_csv(FEEDER_ALL_BUS_VOLTAGE_CSV_PATH)
+    print(
+        f"Feeder {feeder_index}: logging bus voltages for "
+        f"{len(ALL_BUS_VOLTAGE_BUSES)} buses to {FEEDER_ALL_BUS_VOLTAGE_CSV_PATH}"
+    )
 
 load_specs = collect_load_specs(DIST_LOAD_SCALE)
 regulator_specs = collect_regulator_specs(fidvr.regulator_names)
@@ -2101,6 +2234,15 @@ tx_voltage_prev = None
     COSIM_BASE_MVA,
     current_time=0.0,
 )
+if LOG_ALL_BUS_VOLTAGES:
+    append_all_bus_voltage_rows(
+        FEEDER_ALL_BUS_VOLTAGE_CSV_PATH,
+        feeder_index,
+        0,
+        0.0,
+        "INITIAL",
+        ALL_BUS_VOLTAGE_BUSES,
+    )
 initial_alert_voltage = float(alert_signal_info["alert_v_pu"])
 
 print(
@@ -2198,58 +2340,136 @@ iter_count = 0
 while current_time < target_time:
     current_dt = fine_dt if current_time + 1e-9 < coarse_start else coarse_dt
     next_time = min(current_time + current_dt, target_time)
-    granted_time, iteration_state = h.helicsFederateRequestTimeIterative(
-        dist_fed, next_time, h.HELICS_ITERATION_REQUEST_ITERATE_IF_NEEDED
-    )
+    step_state_snapshot = copy.deepcopy(runtime_state)
+    step_loadmult = last_loadmult
+    step_loadmult_time = last_time_applied
+    max_outer = 20
 
-    current_time = granted_time
-    iter_count += 1
+    for _ in range(max_outer):
+        runtime_state = copy.deepcopy(step_state_snapshot)
+        candidate_loadmult = step_loadmult
+        candidate_loadmult_time = step_loadmult_time
 
-    # FINE_DT controls how often this block runs during the fault window. That
-    # makes it the Motor D timer resolution.
-    updated = h.helicsInputIsUpdated(sub_v)
-    if updated:
-        tx_voltage_last = h.helicsInputGetComplex(sub_v)
+        granted_time, iteration_state = h.helicsFederateRequestTimeIterative(
+            dist_fed, next_time, h.HELICS_ITERATION_REQUEST_ITERATE_IF_NEEDED
+        )
+        iter_count += 1
 
-    if current_time > last_time_applied + 1e-9:
-        last_loadmult = loadmult_from_time(current_time)
-        dss.Text.Command(f"set loadmult={last_loadmult:.4f}")
-        last_time_applied = current_time
+        # FINE_DT controls how often this block runs during the fault window.
+        # That makes it the Motor D timer resolution for accepted time steps.
+        updated = h.helicsInputIsUpdated(sub_v)
+        if updated:
+            tx_voltage_last = h.helicsInputGetComplex(sub_v)
 
-    (
-        s_new,
-        total_pq,
-        dist_bus_snapshot,
-        alert_signal_info,
-        stage_info,
-    ) = solve_distribution_from_source(
-        tx_voltage_last,
-        load_specs,
-        regulator_specs,
-        capacitor_specs,
-        disturbance,
-        fidvr,
-        runtime_state,
-        DIST_VOLTAGE_BUS,
-        COSIM_BASE_MVA,
-        current_time=current_time,
-    )
-    h.helicsPublicationPublishComplex(pub_s, s_new)
-    regulator_tap_log = format_regulator_taps_for_log(stage_info)
-    capacitor_state_log = format_capacitor_states_for_log(
-        capacitor_specs, runtime_state
-    )
-    control_state_log = " ".join(
-        token for token in (regulator_tap_log, capacitor_state_log) if token
-    )
-    control_state_suffix = f" {control_state_log}" if control_state_log else ""
+        if granted_time > candidate_loadmult_time + 1e-9:
+            candidate_loadmult = loadmult_from_time(granted_time)
+            dss.Text.Command(f"set loadmult={candidate_loadmult:.4f}")
+            candidate_loadmult_time = granted_time
 
-    if fidvr.enabled and stage_info["stage"] != last_fidvr_stage:
+        (
+            s_new,
+            total_pq,
+            dist_bus_snapshot,
+            alert_signal_info,
+            stage_info,
+        ) = solve_distribution_from_source(
+            tx_voltage_last,
+            load_specs,
+            regulator_specs,
+            capacitor_specs,
+            disturbance,
+            fidvr,
+            runtime_state,
+            DIST_VOLTAGE_BUS,
+            COSIM_BASE_MVA,
+            current_time=granted_time,
+        )
+        h.helicsPublicationPublishComplex(pub_s, s_new)
+
+        if iteration_state == h.HELICS_ITERATION_RESULT_ITERATING:
+            continue
+
+        current_time = granted_time
+        last_loadmult = candidate_loadmult
+        last_time_applied = candidate_loadmult_time
+
+        regulator_tap_log = format_regulator_taps_for_log(stage_info)
+        capacitor_state_log = format_capacitor_states_for_log(
+            capacitor_specs, runtime_state
+        )
+        control_state_log = " ".join(
+            token for token in (regulator_tap_log, capacitor_state_log) if token
+        )
+        control_state_suffix = f" {control_state_log}" if control_state_log else ""
+
+        if fidvr.enabled and stage_info["stage"] != last_fidvr_stage:
+            print(
+                f"[Feeder{feeder_index:02d} FIDVR] "
+                f"t={current_time:.3f}s stage={stage_info['stage']} "
+                f"TxV={stage_info['tx_v_pu']:.6f} pu "
+                f"AppliedV={stage_info['effective_v_pu']:.6f} pu "
+                f"Caps={stage_info['caps_status']} "
+                f"CapFrac={stage_info['cap_fraction']:.3f} "
+                f"Tap={stage_info['applied_tap']:.5f} "
+                f"Restore={stage_info['restore_frac']:.3f} "
+                f"ThermalRestore={stage_info.get('thermal_restore_frac', 0.0):.3f} "
+                f"SlipAvg={stage_info['motor_slip_avg']:.6f} "
+                f"SlipMax={stage_info['motor_slip_max']:.6f} "
+                f"MotorPF={stage_info['motor_pf_avg']:.6f} "
+                f"Running={stage_info.get('motor_running_groups', 0)} "
+                f"Stalled={stage_info.get('motor_stalled_groups', 0)} "
+                f"Tripped={stage_info.get('motor_tripped_groups', 0)} "
+                f"Restoring={stage_info.get('motor_restoring_groups', 0)} "
+                f"ContactorTrips={stage_info.get('motor_contactor_open_groups', 0)} "
+                f"ThermalTrips={stage_info.get('motor_thermal_trip_groups', 0)} "
+                f"LockedOut={stage_info.get('motor_locked_out_groups', 0)}"
+                f"{control_state_suffix}"
+            )
+        last_fidvr_stage = stage_info["stage"]
+        feeder_alert_label = str(alert_signal_info["alert_label"])
+
+        state_str = ITER_STATE_NAME.get(iteration_state, str(iteration_state))
+        dist_alert_voltage_pu = float(alert_signal_info["alert_v_pu"])
+        for alert in feeder_alert_detector.update(current_time, dist_alert_voltage_pu):
+            print(
+                f"[Feeder{feeder_index:02d} ALERT] "
+                f"t={alert.trigger_time_s:.3f}s {alert.alert_id} {alert.alert_name} "
+                f"V={alert.trigger_voltage_pu:.6f} pu | {alert.details}"
+            )
+        if LOG_ALL_BUS_VOLTAGES:
+            append_all_bus_voltage_rows(
+                FEEDER_ALL_BUS_VOLTAGE_CSV_PATH,
+                feeder_index,
+                iter_count,
+                current_time,
+                state_str,
+                ALL_BUS_VOLTAGE_BUSES,
+            )
         print(
-            f"[Feeder{feeder_index:02d} FIDVR] "
-            f"t={current_time:.3f}s stage={stage_info['stage']} "
-            f"TxV={stage_info['tx_v_pu']:.6f} pu "
-            f"AppliedV={stage_info['effective_v_pu']:.6f} pu "
+            f"[Feeder{feeder_index:02d}] "
+            f"iter={iter_count:06d} "
+            f"t_granted={current_time:.3f}s (t_req={next_time:.3f}s, dt={current_dt:.3f}s) "
+            f"state={state_str} | "
+            f"Vupdate={updated} V={stage_info['effective_v_pu']:.6f} pu "
+            f"ang={stage_info['tx_angle_deg']:.6f} deg | "
+            f"DistBus={dist_bus_snapshot['bus']} "
+            f"Vavg={dist_bus_snapshot['avg_mag']:.6f} pu "
+            f"Va={_phase_value(dist_bus_snapshot['phase_mags'], 1):.6f} pu "
+            f"Vb={_phase_value(dist_bus_snapshot['phase_mags'], 2):.6f} pu "
+            f"Vc={_phase_value(dist_bus_snapshot['phase_mags'], 3):.6f} pu "
+            f"Vpos={dist_bus_snapshot['positive_seq_mag']:.6f} pu "
+            f"AlertSignal={alert_signal_info['alert_signal_mode']} "
+            f"AlertBus={alert_signal_info['alert_bus']} "
+            f"AlertV={float(alert_signal_info['alert_v_pu']):.6f} pu "
+            f"AlertVpos={float(alert_signal_info['alert_vpos_pu']):.6f} pu "
+            f"AlertVavg={float(alert_signal_info['alert_vavg_pu']):.6f} pu | "
+            f"TotalPower={total_pq[0]:.2f} kW, {total_pq[1]:.2f} kvar | "
+            f"Pub={s_new.real:.6f}+j{s_new.imag:.6f} pu "
+            f"LoadMult={last_loadmult:.4f} | "
+            f"FIDVR={stage_info['stage']} "
+            f"TxV={stage_info['tx_v_pu']:.6f} "
+            f"MotorP={stage_info['motor_p_scale']:.3f} "
+            f"MotorQ={stage_info['motor_q_scale']:.3f} "
             f"Caps={stage_info['caps_status']} "
             f"CapFrac={stage_info['cap_fraction']:.3f} "
             f"Tap={stage_info['applied_tap']:.5f} "
@@ -2267,60 +2487,12 @@ while current_time < target_time:
             f"LockedOut={stage_info.get('motor_locked_out_groups', 0)}"
             f"{control_state_suffix}"
         )
-    last_fidvr_stage = stage_info["stage"]
-    feeder_alert_label = str(alert_signal_info["alert_label"])
-
-    state_str = ITER_STATE_NAME.get(iteration_state, str(iteration_state))
-    if iteration_state != h.HELICS_ITERATION_RESULT_ITERATING:
-        dist_alert_voltage_pu = float(alert_signal_info["alert_v_pu"])
-        for alert in feeder_alert_detector.update(current_time, dist_alert_voltage_pu):
-            print(
-                f"[Feeder{feeder_index:02d} ALERT] "
-                f"t={alert.trigger_time_s:.3f}s {alert.alert_id} {alert.alert_name} "
-                f"V={alert.trigger_voltage_pu:.6f} pu | {alert.details}"
-            )
-    print(
-        f"[Feeder{feeder_index:02d}] "
-        f"iter={iter_count:06d} "
-        f"t_granted={current_time:.3f}s (t_req={next_time:.3f}s, dt={current_dt:.3f}s) "
-        f"state={state_str} | "
-        f"Vupdate={updated} V={stage_info['effective_v_pu']:.6f} pu "
-        f"ang={stage_info['tx_angle_deg']:.6f} deg | "
-        f"DistBus={dist_bus_snapshot['bus']} "
-        f"Vavg={dist_bus_snapshot['avg_mag']:.6f} pu "
-        f"Va={_phase_value(dist_bus_snapshot['phase_mags'], 1):.6f} pu "
-        f"Vb={_phase_value(dist_bus_snapshot['phase_mags'], 2):.6f} pu "
-        f"Vc={_phase_value(dist_bus_snapshot['phase_mags'], 3):.6f} pu "
-        f"Vpos={dist_bus_snapshot['positive_seq_mag']:.6f} pu "
-        f"AlertSignal={alert_signal_info['alert_signal_mode']} "
-        f"AlertBus={alert_signal_info['alert_bus']} "
-        f"AlertV={float(alert_signal_info['alert_v_pu']):.6f} pu "
-        f"AlertVpos={float(alert_signal_info['alert_vpos_pu']):.6f} pu "
-        f"AlertVavg={float(alert_signal_info['alert_vavg_pu']):.6f} pu | "
-        f"TotalPower={total_pq[0]:.2f} kW, {total_pq[1]:.2f} kvar | "
-        f"Pub={s_new.real:.6f}+j{s_new.imag:.6f} pu "
-        f"LoadMult={last_loadmult:.4f} | "
-        f"FIDVR={stage_info['stage']} "
-        f"TxV={stage_info['tx_v_pu']:.6f} "
-        f"MotorP={stage_info['motor_p_scale']:.3f} "
-        f"MotorQ={stage_info['motor_q_scale']:.3f} "
-        f"Caps={stage_info['caps_status']} "
-        f"CapFrac={stage_info['cap_fraction']:.3f} "
-        f"Tap={stage_info['applied_tap']:.5f} "
-        f"Restore={stage_info['restore_frac']:.3f} "
-        f"ThermalRestore={stage_info.get('thermal_restore_frac', 0.0):.3f} "
-        f"SlipAvg={stage_info['motor_slip_avg']:.6f} "
-        f"SlipMax={stage_info['motor_slip_max']:.6f} "
-        f"MotorPF={stage_info['motor_pf_avg']:.6f} "
-        f"Running={stage_info.get('motor_running_groups', 0)} "
-        f"Stalled={stage_info.get('motor_stalled_groups', 0)} "
-        f"Tripped={stage_info.get('motor_tripped_groups', 0)} "
-        f"Restoring={stage_info.get('motor_restoring_groups', 0)} "
-        f"ContactorTrips={stage_info.get('motor_contactor_open_groups', 0)} "
-        f"ThermalTrips={stage_info.get('motor_thermal_trip_groups', 0)} "
-        f"LockedOut={stage_info.get('motor_locked_out_groups', 0)}"
-        f"{control_state_suffix}"
-    )
+        break
+    else:
+        raise RuntimeError(
+            f"Feeder {feeder_index}: hit max_outer={max_outer} at "
+            f"t={current_time:.3f}s while requesting {next_time:.3f}s."
+        )
 
 feeder_alerts = feeder_alert_detector.to_dataframe()
 feeder_alerts.to_csv(FEEDER_ALERT_CSV_PATH, index=False)

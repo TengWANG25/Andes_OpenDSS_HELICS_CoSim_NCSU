@@ -1,0 +1,491 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{balance}
+\usepackage{graphicx}
+
+\begin{document}
+
+\title{Dynamic FIDVR Response in Transmission-Distribution Co-Simulation}
+
+\author{
+\IEEEauthorblockN{Teng Wang}
+\IEEEauthorblockA{
+Department of Electrical and Computer Engineering\\
+North Carolina State University\\
+Raleigh, NC, USA\\
+Emails: twang48@ncsu.edu}
+}
+
+
+\maketitle
+
+\begin{abstract}
+This paper proposes an open-source transmission-distribution (T\&D) co-simulation framework for the analysis of fault-induced delayed voltage recovery (FIDVR). The framework couples an IEEE 14-bus transmission system modeled in ANDES with an IEEE 13-node distribution feeder modeled in OpenDSS, while HELICS coordinates the exchange of interface voltage and feeder complex power. To represent residential air-conditioner response, selected single-phase feeder loads are decomposed into a residual static component and a WECC Motor D-type compressor-motor component. The proposed framework is used to study the effect of motor share, feeder voltage diversity, transmission fault location, and post-fault restoration stages. Simulation results show that the Motor D share mainly affects the post-clearing reactive-power demand rather than the fault-period voltage nadir. The results also show that the feeder-head voltage can recover while downstream nodes remain depressed, and that transmission faults away from the interface bus can still trigger feeder-level delayed recovery. A 45~s case study further illustrates the sequence of fault dip, delayed recovery, capacitor insertion, restartable motor return, regulator tap action, and thermal load restoration.
+\end{abstract}
+
+\begin{IEEEkeywords}
+fault induced delayed voltage recovery, transmission-distribution co-simulation, dynamic load modeling, HELICS, OpenDSS, ANDES, composite load model.
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+\subsection{Motivation}
+
+Transmission and distribution systems are often simulated with different modeling assumptions. Transmission models are commonly represented as balanced positive-sequence dynamic networks, whereas distribution feeders are radial, unbalanced, and include device-level voltage controls. This separation is computationally convenient, but it can hide relevant interactions between bulk-system disturbances and feeder-level dynamics \cite{inproceedings,article}. Fault-induced delayed voltage recovery (FIDVR) is one example in which this interaction is essential. FIDVR is characterized by a sustained low-voltage profile following the clearing of a transmission fault, and several such events have been reported in North American systems \cite{207331,miller2014wws_phase3}.
+
+A FIDVR event is initiated by a fault. After the fault is cleared, the voltage first recovers only partially and can remain depressed for several seconds. The North American Electric Reliability Corporation (NERC) describes FIDVR as a condition involving induction motor stalling, incomplete initial voltage recovery, and delayed restoration of the voltage toward its pre-contingency level \cite{nerc2025dynamicloadmodeling,lesieutre2012loadmodeling}. 
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{report_assets/fidvr_signature.png}
+    \caption{Representative FIDVR voltage recovery trajectory \cite{article7}.}
+    \label{fig:fidvr_signature}
+\end{figure}
+Figure~\ref{fig:fidvr_signature} illustrates the typical voltage trajectory
+of a FIDVR event.
+The dominant physical mechanism is the stalling of single-phase induction motors in residential air conditioners. During a severe voltage sag, stalled compressor motors draw a large reactive current. This current further depresses the local voltage, delays motor recovery, and can lead to contactor dropout, thermal tripping, or additional motor stalling. The resulting feedback between load behavior and voltage recovery is the main reason why FIDVR cannot always be represented accurately by a static load model.
+
+The objective of this work is to evaluate FIDVR using a co-simulation formulation that preserves transmission dynamics and feeder-level voltage resolution. The main contributions are as follows:
+\begin{enumerate}
+    \item an ANDES-OpenDSS-HELICS workflow for dynamic T\&D FIDVR studies;
+    \item a feeder-level Motor D implementation that separates selected single-phase loads into static and compressor-motor components;
+    \item a set of case studies that quantify motor-share sensitivity, feeder voltage diversity, transmission fault-location effects, and the sequence of post-fault restoration events.
+\end{enumerate}
+Section~II reviews motor-level FIDVR models, aggregate composite load models, and T\&D co-simulation methods. Section~III presents the modeling framework and assessment metrics. Section~IV presents the validation and case-study results. Section~V summarizes the main conclusions and future work.
+
+\section{Literature Review}
+
+\subsection{FIDVR Mechanism and Load Modeling}
+
+Residential air-conditioning load is a major driver of FIDVR. A U.S. Department of Energy survey reported that a large share of households use either central or room air-conditioning equipment; consequently, faults in areas with high air-conditioner penetration can lead to widespread motor stalling \cite{6863324}. Therefore, an adequate representation of single-phase A/C motors is essential for reproducing the delayed voltage-recovery process.
+
+Several studies have modeled the compressor motor explicitly. Ravikumar \emph{et al.} developed an EMTP-based point-on-wave model of single-phase air-conditioner motors and tested the response under different voltage-depression conditions \cite{inproceedings1}. Zheng and DeMarco proposed a dynamic performance model that represents the transition from running to stalled operation and the subsequent thermal trip process \cite{7444204}. These studies show that FIDVR is not determined only by fault duration or voltage magnitude. It is also affected by motor loading, protection settings, contactor behavior, and thermal trajectories.
+
+A second approach is to represent the phenomenon through aggregate dynamic load models. The WECC composite load model includes a dedicated single-phase air-conditioner motor component and associated protection logic \cite{bravo2009weccacmotor}. The NERC dynamic load modeling reference provides practical default parameters for the single-phase motor component commonly referred to as Motor D \cite{nerc2025dynamicloadmodeling}. The Motor D model provides a compact
+performance-based representation of compressor-motor behavior during voltage
+sags. In the original formulation\cite{bravo2009weccacmotor}, a prescribed fraction of the
+constant power load is reassigned to an equivalent air-conditioner motor, while
+the remaining part of the load is represented by the associated static load
+model. This representation retains the main FIDVR mechanisms of residential
+compressor motors, including voltage-dependent stalling, stalled-state active
+and reactive power consumption, contactor action, thermal protection, and
+partial restart. It is computationally simpler than an EMT motor model and is
+therefore suitable for feeder-level dynamic studies within a T\&D
+co-simulation framework. Its limitation is that the motor is represented by a
+performance model rather than by instantaneous electromagnetic equations.
+Consequently, point-on-wave effects, dc offsets, and detailed flux dynamics are
+not resolved. These effects require EMT modeling, but at a substantially
+higher computational cost and with a smaller practical study area
+\cite{bravo2009weccacmotor,ravikumar2016emtp,huang2016hybridfidvr}.
+
+Composite load models and EMT models are based on different modeling
+assumptions and are therefore suited to different studies. The composite load
+model is an aggregate phasor-domain model. It is computationally efficient and
+well suited to large-scale dynamic simulations, but the single-phase compressor
+motor is described through an equivalent performance model rather than through
+instantaneous electromagnetic variables. Conversely, an EMT model resolves the
+point-on-wave evolution of voltages, currents, flux linkages, and torque. It can
+therefore represent phase-angle dependence, dc-offset components, and
+unbalanced waveform effects that are not retained in a positive-sequence
+formulation. This increased physical resolution, however, is obtained at the
+expense of a substantially higher computational cost and a reduced practical
+study area \cite{ravikumar2016emtp,huang2016hybridfidvr}.
+
+\subsection{Transmission-Distribution Co-Simulation}
+
+T\&D co-simulation keeps the transmission and distribution models in separate simulation tools while coordinating time advancement and exchanging boundary variables through middleware. In a typical dynamic T\&D interface, the transmission simulator sends the interface-bus voltage to the distribution simulator, and the distribution simulator returns the complex feeder power to the transmission simulator. This structure allows each subsystem to retain its native models and numerical solution methods while appearing externally as a coupled system.\cite{9569771}
+
+Huang \emph{et al.} proposed an open-source framework for power-system T\&D dynamic co-simulation based on the Framework for Network Co-Simulation (FNCS) \cite{article1}. Palmintier \emph{et al.} later described the HELICS architecture, which was developed to coordinate large-scale co-simulation studies involving power, communication, market, and end-use simulators \cite{inproceedings2}. HELICS also supports iterative time advancement. As illustrated in Fig.~\ref{fig:HELICS}, the outer loop advances the global simulation time, whereas the inner loop exchanges boundary variables among federates at a fixed time instant. If the boundary mismatch is above the convergence tolerance, the federates remain in the \texttt{ITERATING} state. Once the boundary variables are consistent, HELICS grants the next time step and the co-simulation proceeds.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{report_assets/helics_candidate_2.jpg}
+    \caption{Iterative time-advancement structure of the HELICS-based co-simulation.}
+    \label{fig:HELICS}
+\end{figure}
+
+Different tool combinations have been used for T\&D co-simulation. Early steady-state and quasi-static studies coupled MATLAB with OpenDSS for IEEE 9-bus or IEEE 39-bus transmission systems and EPRI distribution feeders \cite{8805231,article3}. Other studies used MATLAB-based transmission and distribution models for coordinated T\&D optimal power flow \cite{article4}. Integrated grid studies coupled FESTIV or MATPOWER with GridLAB-D to connect bulk-system operation with distribution and end-use models \cite{7558187}. For dynamic studies, researchers have used PSCAD/EMTDC with InterPSS for hybrid EMT-phasor simulation, mixed three-sequence and three-phase models for unbalanced T\&D dynamics, Three Phase Dynamics Analyzer for combined T\&D dynamic simulation, and GridLAB-D or EMT/OpenDSS for distribution-side dynamic studies \cite{8356599,7782366,7426417,7024951,7582536}. Federated dynamic co-simulation has also been studied using FNCS with dynamic three-phase models and GridLAB-D, PSAT with OpenDSS for integration time step analysis, and PSLF with OpenDSS for distributed generation response to bulk system faults \cite{article1,8485735}.
+
+More recently, Wang \emph{et al.} developed an open-source ANDES-OpenDSS-HELICS framework for DER frequency-response studies \cite{9569771}. In that framework, ANDES represents the transmission dynamics, OpenDSS solves the distribution network, and HELICS coordinates the exchange of boundary quantities. The framework is particularly relevant because it demonstrates the feasibility of an open-source and scalable T\&D dynamic co-simulation architecture. However, its main objective is DER frequency response rather than FIDVR. The present work uses the same general software philosophy but focuses on feeder-level compressor-motor stalling and delayed voltage recovery.
+
+\subsection{Position of the Proposed Work}
+
+Table~\ref{tab:methods} summarizes the main modeling approaches. Existing FIDVR studies have established the physical basis of delayed voltage recovery, the importance of stalled residential compressor motors, and the usefulness of aggregate composite load models. EMT and hybrid EMT transient-stability studies provide additional physical detail but are often limited to simplified feeders or reduced study areas. Recent T\&D co-simulation studies demonstrate that distribution-side behavior can modify bulk-system dynamics, but many of them focus on DER ride-through rather than compressor-motor stalling. The proposed work therefore targets the intermediate gap: an open-source, feeder-level, FIDVR-oriented dynamic co-simulation study using ANDES, OpenDSS, and HELICS.
+
+\begin{table*}[t]
+\caption{Comparison of Available Approaches for Simulating FIDVR}
+\label{tab:methods}
+\centering
+\begin{tabular}{p{0.18\linewidth} p{0.27\linewidth} p{0.23\linewidth} p{0.22\linewidth}}
+\toprule
+\textbf{Approach} & \textbf{Main contribution} & \textbf{Network representation} & \textbf{Remaining limitation} \\
+\midrule
+Field-motivated FIDVR models \cite{207331} & Combined field observations and laboratory tests to explain delayed voltage recovery and to motivate dynamic load representation. & 115 kV and 66 kV sub-transmission systems. & Limited feeder-level and phase-domain resolution. \\
+WECC composite load model \cite{8973440} & Implemented and calibrated aggregate composite load models, compared simulated recovery with PMU data, and identified sensitive Motor D and protection parameters. & Southern California Edison Valley substation. & Does not resolve feeder topology, phase imbalance, or the spatial distribution of stalled single-phase motors. \\
+WECC CMPLDW with variable-frequency drive
+(VFD) air conditioners \cite{9398658} & Showed that higher VFD penetration can reduce voltage sag and recovery time. & Utility planning network. & Focuses on the effect of VFD A/C penetration rather than feeder-level motor stalling diversity. \\
+EMTP point-on-wave model \cite{93986581} & Demonstrated that motor stalling depends on voltage magnitude, duration, loading condition, and point-on-wave initiation angle. & Simplified unbalanced distribution feeder. & High model detail limits scalability for large system dynamic studies. \\
+Hybrid EMT transient stability model \cite{7279209} & Coupled PSCAD/EMTDC and InterPSS through a three-phase boundary equivalent to study unbalanced faults and A/C motor stalling in a large WECC system. & Sub-transmission and distribution systems supplied from selected WECC buses. & Uses equivalent feeders and a fundamental frequency interface, which limits detailed feeder topology and harmonic representation. \\
+Coupled PSLF-OpenDSS study with WECC CMPLDWG and PVD1 \cite{KENYON2020106746} & Showed that feeder-level inverter ride-through behavior can significantly change the bulk system response during a disturbance. & WECC transmission case with distribution feeders and IEEE 1547 ride-through logic. & Focuses on DER/PV ride-through rather than compressor-motor stalling and FIDVR motor dynamics. \\
+\midrule
+Proposed work & Develops an open-source, feeder-level, FIDVR-oriented extension of T\&D dynamic co-simulation using ANDES-OpenDSS-HELICS. & IEEE 14-bus transmission system coupled to an IEEE 13-node feeder. & Parameters are benchmark-oriented and should be calibrated for utility-specific studies. \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\section{Modeling Framework}
+
+\subsection{General Dynamic Representation}
+
+The transmission system is represented by the following set of differential-algebraic equations (DAEs) \cite{1490569}:
+\begin{align}
+    \dot{x}_T &= f_T(x_T,y_T,u_T,p_T), \\
+    0 &= g_T(x_T,y_T,u_T,p_T),
+\end{align}
+where $x_T$ denotes the transmission dynamic states, $y_T$ is the algebraic variables, $u_T$ is the boundary input received from the distribution feeder, and $p_T$ is the model parameters.
+
+For feeder $k$, the distribution model is written as
+\begin{align}
+    \dot{x}_{D,k} &= f_{D,k}(x_{D,k},y_{D,k},u_{D,k},p_{D,k}), \\
+    0 &= g_{D,k}(x_{D,k},y_{D,k},u_{D,k},p_{D,k}).
+\end{align}
+For a quasi-static OpenDSS feeder, the differential states may be absent from the network solution itself. In this study, motor stalling, contactor dropout, thermal tripping, and restart logic are represented as discrete dynamic states in the Python layer surrounding OpenDSS.
+
+At the interface bus, the transmission simulator sends the feeder-source voltage and the distribution simulator returns the aggregate feeder power. The exchanged variables can be written as
+\begin{align}
+    u_{D,k} &= V_{abc,k}, \\
+    u_T &= \sum_{k=1}^{N_f} S_{abc,k},
+\end{align}
+where $V_{abc,k}$ is the three-phase interface voltage supplied to feeder $k$, $S_{abc,k}$ is the three-phase complex power drawn by feeder $k$, and $N_f$ is the number of coupled feeders.
+
+\subsection{Test System and Event Definition}
+
+The proposed assessment uses the IEEE 14-bus transmission system coupled to the IEEE 13-node feeder at bus 14. ANDES solves the transmission dynamic model, OpenDSS solves the distribution feeder, and HELICS coordinates the boundary-variable exchange. The transmission federate publishes the interface-bus voltage, denoted by \texttt{TxInterfaceVoltage}. The distribution federate publishes the aggregate feeder complex power, denoted by \texttt{Feeder\_Power}. The overall structure is shown in Fig.~\ref{fig:cosim}.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{report_assets/helics_candidate_1.jpeg}
+    \caption{Proposed ANDES-OpenDSS-HELICS co-simulation framework.}
+    \label{fig:cosim}
+\end{figure}
+
+A three-phase-to-ground fault is applied at the interface bus at $t=1.0$~s. The default fault duration is $0.08$~s. The default fault resistance is zero, and the fault reactance is $0.3$~p.u. The transmission time-domain step is set to $0.03$~s, which is also used as the default co-simulation step in the transmission federate \cite{9169830}. Before the dynamic simulation starts, the transmission and distribution simulators iterate on the interface voltage and feeder power to obtain a consistent initial operating point.
+
+On the distribution side, node 675 is selected as the default monitored load node. OpenDSS controls are disabled so that the FIDVR control logic is explicitly represented in the Python layer. The feeder source voltage is initialized at 1.03~p.u. before the co-simulation initialization.
+
+The added compressor motor groups are placed at selected single-phase load locations of the IEEE 13-node feeder, as shown in Fig.~\ref{fig:DisMotor}:
+\[
+\{634(a,b,c),645,675(a,b,c),611,652,670(a,b,c)\}.
+\]
+\begin{table}[t]
+\centering
+\caption{Basic information of the IEEE 13-node feeder used in the proposed study}
+\label{tab:feeder_info}
+\begin{tabular}{lll}
+\hline
+\textbf{Item} & \textbf{Value} \\
+\hline
+Total active load & 3466 kW  \\
+Total reactive load & 2102 kvar  \\
+Capacitor at Bus 675 & 600 kvar, three-phase  \\
+Capacitor at Bus 611 & 100 kvar, single-phase  \\
+Maximum Motor D active load & 1911 kW  \\
+Motor D active load share & 55.1\%  \\
+Motor locations & 634, 645, 675, 611, 652, 670 \\
+\hline
+\end{tabular}
+\end{table}
+For each selected phase load, the original load is divided into a static component and a motor component. The maximum motor share is defined by replacing all original
+static active loads at these selected locations with the Motor D
+compressor load, which is
+\begin{align}
+    P_{\mathrm{MotorD,max}} = 1911~\mathrm{kW}.
+\end{align}
+Compared with the total feeder active load,
+\begin{align}
+    P_{\mathrm{load}} = 3466~\mathrm{kW},
+\end{align}
+the maximum Motor D active-load share is
+\begin{align}
+    \frac{P_{\mathrm{MotorD,max}}}{P_{\mathrm{load}}}
+    =
+    \frac{1911}{3466}
+    =
+    55.1\%.
+\end{align}
+Thus, in the high motor-share case, more than half of the feeder active
+load is represented by Motor D compressor load. The corresponding
+reactive power is determined by the
+motor equations, terminal voltage, and motor state during the simulation.
+The basic feeder and motor-share information is summarized in
+Table~\ref{tab:feeder_info}.
+
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{report_assets/ieee13_candidate_1.jpeg}
+    \caption{IEEE 13-node feeder with added compressor-motor groups.}
+    \label{fig:DisMotor}
+\end{figure}
+
+\subsection{Motor D Parameterization}
+
+The compressor-motor representation follows the WECC single-phase air-conditioner Motor D structure \cite{bravo2009weccacmotor}. For each selected phase load $i$, the original active power $P_{0,i}$ is split as
+\begin{align}
+    P_{m,i} &= F_m P_{0,i}, \\
+    P_{s,i} &= (1-F_m)P_{0,i},
+\end{align}
+where $P_{m,i}$ is the motor component, $P_{s,i}$ is the remaining static component, and $F_m$ is the motor fraction. The initial motor reactive power is computed from the compressor power factor as
+\begin{equation}
+    Q_{m,i}=P_{m,i}\tan\left[\cos^{-1}(\mathrm{CompPF})\right].
+\end{equation}
+For the default value $\mathrm{CompPF}=0.97$, the initial reactive-to-active power ratio is
+\begin{equation}
+    \frac{Q_{m,i}}{P_{m,i}}=0.251.
+\end{equation}
+Thus, before stalling, the motor component has a moderate reactive-power demand.
+
+During the stalled condition, the Motor D implementation uses the stall impedance parameters. The equivalent conductance and susceptance are
+\begin{align}
+    G_{stall} &= \frac{R_{stall}}{R_{stall}^2+X_{stall}^2}, \\
+    B_{stall} &= \frac{X_{stall}}{R_{stall}^2+X_{stall}^2},
+\end{align}
+and the corresponding stalled active and reactive powers are
+\begin{align}
+    P_{stall} &= G_{stall}V^2, \\
+    Q_{stall} &= B_{stall}V^2.
+\end{align}
+Using $R_{stall}=0.124$, $X_{stall}=0.114$, and $V_{stall}=0.70$, the stalled load factors at the stall threshold are approximately
+\begin{equation}
+    P_{stall}\approx2.14P_m, \qquad Q_{stall}\approx1.97P_m.
+\end{equation}
+The stalled motors therefore impose a large reactive power demand on the feeder and can delay the restoration of the post-fault voltage. The default parameters used in the implemented feeder model are summarized in Table~\ref{tab:motor_d_params}.
+
+\begin{table}[t]
+\centering
+\caption{Default Motor D Parameters Used in the Feeder Model}
+\label{tab:motor_d_params}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Meaning} \\
+\midrule
+CompPF & 0.97 & Compressor operating power factor \\
+$V_{stall}$ & 0.70 p.u. & Stall voltage threshold \\
+$R_{stall}$ & 0.124 p.u. & Stall resistance \\
+$X_{stall}$ & 0.114 p.u. & Stall reactance \\
+$T_{stall}$ & 0.033 s & Stall delay \\
+$F_{rst}$ & 0.20 & Fraction allowed to restart \\
+$V_{rst}$ & 0.90 p.u. & Restart voltage threshold \\
+$T_{rst}$ & 0.40 s & Restart delay \\
+$V_{brk}$ & 0.86 p.u. & Running-characteristic break voltage \\
+$V_{c1,off}$ & 0.45 p.u. & Contactor dropout begins \\
+$V_{c2,off}$ & 0.35 p.u. & Contactor dropout completes \\
+$V_{c1,on}$ & 0.50 p.u. & Contactor reconnection completes \\
+$V_{c2,on}$ & 0.40 p.u. & Contactor reconnection begins \\
+$T_{th}$ & 10.0 s & Thermal time constant \\
+$Th1t$ & 1.30 & Thermal trip begins \\
+$Th2t$ & 4.30 & Thermal trip completes \\
+$F_{uvr}$ & 0.00 & Fraction with undervoltage relay trip \\
+$V_{uv1}$ & 0.80 p.u. & First UV trip threshold \\
+$T_{uv1}$ & 0.20 s & First UV trip delay \\
+$V_{uv2}$ & 0.90 p.u. & Second UV trip threshold \\
+$T_{uv2}$ & 5.00 s & Second UV trip delay \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{FIDVR Assessment Metrics}
+
+The assessment compares two main cases:
+\begin{enumerate}
+    \item \textbf{Baseline co-simulation case:} the IEEE 13-node feeder is coupled to the transmission system without the added single-phase compressor-motor groups.
+    \item \textbf{FIDVR-enabled case:} the compressor-motor groups are added with different motor fractions to evaluate the sensitivity of post-fault recovery to motor penetration.
+\end{enumerate}
+
+The following quantities are used to evaluate the response:
+\begin{align}
+    V_{min}^{T} &= \min_t |V_T(t)|, \\
+    V_{min}^{fh} &= \min_t |V_{fh}(t)|, \\
+    V_{min}^{load} &= \min_{\ell,t} |V_{\ell}(t)|, \\
+    Q_{max}^{D} &= \max_t Q_D(t), \\
+    T_{0.90}^{D} &= \min\{t>t_c: |V_D(t)| \geq 0.90\}, \\
+    T_{0.95}^{D} &= \min\{t>t_c: |V_D(t)| \geq 0.95\}, \\
+    N_{stall}(t) &= \text{number of stalled motor groups}.
+\end{align}
+Here, $V_T$ is the interface bus voltage, $V_{fh}$ is the feeder-head voltage, $V_{load}$ is the voltage of monitored load bus $\ell$, $Q_D$ is the feeder reactive power seen by the transmission system, and $t_c$ is the fault clearing time. The recovery times $T_{0.90}^{D}$ and $T_{0.95}^{D}$ directly measure the delayed voltage recovery process.
+
+The comparison is performed between two T\&D co-simulation cases. The baseline
+case uses the original feeder loads without added compressor motors. The
+FIDVR-enabled case uses the same system and disturbance, but selected
+single-phase loads are split into a residual static component and a WECC compressor-motor component. Therefore, the
+difference between the two cases isolates the effect of compressor-motor
+stalling.
+
+The motor-induced voltage depression is defined as
+\begin{align}
+    \Delta V_{\min}^{fh} &=
+    V_{\min}^{fh,\mathrm{base}} - V_{\min}^{fh,\mathrm{motor}}, \\
+    \Delta V_{\min}^{load} &=
+    V_{\min}^{load,\mathrm{base}} - V_{\min}^{load,\mathrm{motor}}.
+\end{align}
+Positive values indicate that the compressor-motor component deepens the
+post-fault voltage sag. The corresponding recovery-time delay is defined as
+\begin{equation}
+    \Delta T_{\alpha} =
+    T_{\alpha}^{\mathrm{motor}} - T_{\alpha}^{\mathrm{base}},
+\end{equation}
+where
+\begin{equation}
+    T_{\alpha}^{c} =
+    \min \{t>t_c: |V_{load}^{c}(t)| \geq \alpha \},
+    \qquad
+    c\in\{\mathrm{base},\mathrm{motor}\}.
+\end{equation}
+Here, $t_c$ is the fault clearing time and $\alpha$ is the selected recovery
+threshold, such as $0.90$ or $0.95$ p.u. A larger $\Delta T_{\alpha}$ indicates
+that compressor-motor stalling delays the post-fault voltage recovery. The
+increase in feeder reactive power demand is also quantified as
+\begin{equation}
+    \Delta Q_{\max}^{D} =
+    Q_{\max}^{D,\mathrm{motor}} - Q_{\max}^{D,\mathrm{base}}.
+\end{equation}
+
+\section{Case Studies}
+
+This section evaluates the proposed framework through four complementary studies. The first verifies the co-simulation workflow against an established large-scale T\&D benchmark. The second quantifies the sensitivity of post-fault recovery to the Motor D share. The third illustrates the feeder-level voltage diversity that is hidden by a single equivalent load. The fourth evaluates whether transmission disturbances away from the interface bus can still lead to feeder-level delayed voltage recovery. Unless otherwise stated, the monitored distribution signal is the average voltage magnitude at node 675, the transmission interface bus is bus 14, the fault begins at $t=1.0$~s and clears at $t=1.08$~s, and the Motor D share is applied to the selected single-phase loads listed in Table~\ref{tab:feeder_info}.
+
+\subsection{Validation Case: IEEE 118-Bus and IEEE 8500-Node System}
+
+The ANDES-OpenDSS-HELICS workflow is first checked using an IEEE 118-bus transmission system coupled to an IEEE 8500-node feeder. This case is compared with an existing GridPACK-GridLAB-D-HELICS implementation based on the same boundary-variable exchange. The purpose of this step is not to calibrate the FIDVR model, but to verify that the transmission voltage trajectory, aggregate feeder power, and HELICS synchronization are consistent with an established T\&D co-simulation workflow. The smaller IEEE 14-bus and IEEE 13-node system is then used for the remaining studies because it allows the feeder response, motor-state changes, and transmission fault-location effects to be interpreted explicitly.
+
+\subsection{Motor-Share Sensitivity}
+
+The first FIDVR study applies the same bus-14 three-phase fault while sweeping the Motor D share from 0\% to 100\% of the selected single-phase loads. The 0\% case is used as the benchmark because all selected loads retain their original static OpenDSS representation. Figure~\ref{fig:motor_share_voltage} shows the node-675 voltage trajectories, and Fig.~\ref{fig:motor_share_q} shows the corresponding transmission-interface reactive power.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{motor_share_sweep_runs/motor_share_distribution_voltage.png}
+    \caption{Distribution node 675 voltage response for different Motor D shares. The 0\% case is the static-load benchmark.}
+    \label{fig:motor_share_voltage}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{motor_share_sweep_runs/motor_share_total_reactive_power.png}
+    \caption{Transmission-interface reactive power response for different Motor D shares.}
+    \label{fig:motor_share_q}
+\end{figure}
+
+The main observation from Table~\ref{tab:motor_share_results} is that the Motor D share mostly changes the post-clearing response. The voltage nadir during the fault is similar in all cases, ranging from 0.361~p.u. to 0.369~p.u. By contrast, the maximum interface reactive power increases from 0.0176~p.u. in the benchmark case to 0.0709~p.u. in the 100\% Motor D case. The 10~s node-675 voltage decreases from 1.003~p.u. to 0.891~p.u. Hence, the delayed recovery is not mainly a consequence of a deeper fault-period voltage sag; it is caused by the elevated post-fault reactive-power demand of stalled and recovering compressor motors.
+
+\begin{table}[!t]
+\centering
+\caption{Motor-Share Sensitivity Results at 10 s}
+\label{tab:motor_share_results}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Motor share} & \textbf{Min. $V_{675}$} & \textbf{$V_{675}$ at 10 s} & \textbf{Max. $Q_T$} \\
+ & \textbf{(p.u.)} & \textbf{(p.u.)} & \textbf{(p.u.)} \\
+\midrule
+0\%   & 0.361 & 1.003 & 0.0176 \\
+25\%  & 0.363 & 0.969 & 0.0397 \\
+50\%  & 0.365 & 0.920 & 0.0578 \\
+75\%  & 0.367 & 0.917 & 0.0695 \\
+100\% & 0.369 & 0.891 & 0.0709 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Feeder-Level Voltage Diversity}
+
+The second case uses the same bus-14 fault and 100\% Motor D share, but monitors several IEEE 13-node feeder locations. This case evaluates the information lost when the feeder is replaced by a single equivalent load. Figure~\ref{fig:node_diversity} compares the average voltage at the feeder nodes. Node 650 is the upstream feeder-head node, whereas node 652 is a downstream node. Although the fault produces a deep voltage sag throughout the feeder, the post-clearing recovery is spatially non-uniform. At 10~s, node 650 recovers to approximately 0.995~p.u., whereas node 652 remains near 0.813~p.u. and node 675 remains near 0.892~p.u.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{fault_all_node_voltage_run/plots/feeder_1_ieee13_node_voltages.png}
+    \caption{Voltage recovery across IEEE 13-node feeder locations for the same transmission-side fault.}
+    \label{fig:node_diversity}
+\end{figure}
+
+This result shows that the feeder-head voltage is not a sufficient indicator of the load-node recovery. A single equivalent distribution load connected at the interface bus can reproduce the aggregate feeder power, but it cannot identify which downstream nodes experience the deepest or longest voltage depression. Feeder-level voltage resolution is therefore necessary for locating the nodes most exposed to FIDVR.
+
+\subsection{Transmission Fault-Location Study}
+
+The third study keeps the monitored feeder node and Motor D share fixed, while changing the transmission-side disturbance. The selected disturbances include an interface-bus fault at bus 14, a near-interface fault at bus 13, remote bus faults at buses 7 and 4, and a temporary line-13 trip. All bus faults use the same start time, duration, resistance, and reactance. The line-trip case is included to compare a topology event with short-circuit faults. Figure~\ref{fig:fault_sweep_distribution} shows the node-675 voltage response, and Table~\ref{tab:fault_sweep_results} summarizes the voltage nadirs.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{transmission_fault_sweep_runs/fault_sweep_distribution_voltage.png}
+    \caption{Distribution node 675 voltage response for selected transmission-side disturbances.}
+    \label{fig:fault_sweep_distribution}
+\end{figure}
+
+\begin{table}[!t]
+\centering
+\caption{Transmission Fault-Location Sensitivity Results}
+\label{tab:fault_sweep_results}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Disturbance} & \textbf{Min. $V_T$} & \textbf{Min. $V_{675}$} & \textbf{$V_{675}$ at 10 s} \\
+ & \textbf{(p.u.)} & \textbf{(p.u.)} & \textbf{(p.u.)} \\
+\midrule
+Bus 14 fault & 0.364 & 0.369 & 0.891 \\
+Bus 13 fault & 0.498 & 0.483 & 0.892 \\
+Bus 7 fault  & 0.530 & 0.510 & 0.892 \\
+Bus 4 fault  & 0.577 & 0.550 & 0.893 \\
+Line 13 trip & 0.967 & 0.959 & 1.004 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The direct bus-14 fault produces the deepest voltage sag. However, the non-interface bus faults also depress the feeder voltage enough to produce delayed recovery. The bus-13 case is electrically close to the interface and produces a strong feeder response. The bus-7 and bus-4 faults are more remote, but still lead to clear voltage depression at node 675. In contrast, the line-13 trip is mild and does not produce the same delayed recovery. These results indicate that FIDVR screening should not be restricted to faults at the distribution interface bus. The disturbance type, electrical distance, and resulting transmission voltage trajectory all affect the feeder response.
+
+\subsection{FIDVR Alert and Load-Restoration Case}
+
+The final case extends the high motor-share simulation to 45~s to capture the post-fault restoration sequence. Figure~\ref{fig:stage_view} shows the node-675 voltage trajectory and the main event markers. The fault produces a fast voltage dip at approximately 1.01~s. The feeder voltage then remains below the normalized 0.90~p.u. delayed-recovery threshold for 5~s, and the delayed-recovery alert is triggered at 6.01~s. Capacitors are fully inserted at approximately 6.09~s. The 20\% restartable motor component completes its short restart path at approximately 15.49~s, and the regulator tap reaches its maximum at approximately 18.09~s. The voltage later enters an overvoltage stage and triggers the third alert at 28.14~s.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.48\textwidth]{runs/fidvr_45s_load_restoration/plots/feeder_1_distribution_bus_voltage_stage_view.png}
+    \caption{Distribution node 675 FIDVR stages for the 45~s high-motor-share case.}
+    \label{fig:stage_view}
+\end{figure}
+
+Table~\ref{tab:alert_results} compares the alert response at distribution node 675 and transmission bus 14. The transmission interface voltage experiences the fast fault dip, but it does not satisfy the delayed-recovery or overvoltage criteria. In contrast, node 675 triggers all three alerts. Thus, the transmission voltage alone suggests a fast recovery, whereas the feeder-level voltage reveals the delayed-recovery and restoration stages caused by compressor-motor dynamics and feeder controls.
+
+\begin{table}[!t]
+\centering
+\caption{FIDVR Alert Results for the 45 s Case}
+\label{tab:alert_results}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Alert} & \textbf{Meaning} & \textbf{Node 675} & \textbf{Bus 14} \\
+\midrule
+1 & Fault voltage dip & 1.010 s & 1.005 s \\
+2 & Delayed recovery & 6.010 s & Not triggered \\
+3 & Recovery overshoot & 28.140 s & Not triggered \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 45~s simulation also clarifies why a 30~s simulation is not sufficient to observe the load-restoration effect. Thermal load restoration begins at approximately 28.23~s, close to the 30~s endpoint. By 45~s, the thermal restoration fraction has increased to approximately 0.29, node 675 remains near 1.05~p.u., and the Motor D reactive-power scale has decreased from its post-fault peak while remaining above the pre-fault level. The late recovery is therefore a staged interaction among motor restart, thermal tripping, capacitor insertion, regulator tap boost, and restored load.
+
+\section{Conclusion}
+\balance
+
+This paper has proposed and evaluated a feeder-level FIDVR study workflow based on ANDES, OpenDSS, and HELICS. The framework preserves the transmission dynamic model while resolving the distribution feeder and its Motor D compressor-motor response.
+
+The following conclusions can be drawn. First, the Motor D share is a dominant sensitivity parameter. Increasing the Motor D share does not substantially change the fault-period voltage nadir, but it increases the post-fault reactive-power demand and delays voltage recovery. Second, feeder-level voltage diversity is significant. The feeder head can recover close to nominal voltage while downstream nodes remain depressed, which cannot be observed with a single equivalent-load representation. Third, transmission faults away from the interface bus can still affect the distribution feeder. Faults at buses 13, 7, and 4 propagated through the interface voltage and produced delayed recovery at node 675, although their severity differed from the direct bus-14 fault. Fourth, the transmission and distribution alert responses are different. Transmission bus 14 triggered only the fast fault-dip alert, whereas distribution node 675 triggered the fault-dip, delayed-recovery, and recovery-overshoot alerts.
+
+These results indicate that FIDVR is a coupled T\&D phenomenon whose critical recovery stages can occur inside the feeder after the bulk interface voltage has apparently recovered. Future work should extend the study to multiple feeders and larger transmission networks, calibrate the Motor D, capacitor, and regulator parameters against utility or benchmark FIDVR data, and evaluate mitigation strategies such as motor protection settings, feeder capacitor control, regulator coordination, and dynamic reactive-power support.
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

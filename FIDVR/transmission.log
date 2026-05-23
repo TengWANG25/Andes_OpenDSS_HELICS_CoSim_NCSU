@@ -1,10 +1,10 @@
 Transmission: HELICS interfaces created.
-Transmission config: case=/home/teng/benchmark_118_10_8500_Andes_OpenDSS/FIDVR/ieee14_fault.xlsx interface_bus=14 feeders=1 interface_base=100.000 MVA broker=tcp://127.0.0.1:23406 voltage_topic=TxInterfaceVoltage uninterruptible=False
+Transmission config: case=/home/teng/benchmark_118_10_8500_Andes_OpenDSS/FIDVR/ieee14_fault.xlsx interface_bus=14 feeders=1 interface_base=100.000 MVA broker=tcp://127.0.0.1:23406 voltage_topic=TxInterfaceVoltage uninterruptible=False output_dir=/home/teng/benchmark_118_10_8500_Andes_OpenDSS/FIDVR
 Transmission base alignment: interface_base=100.000 MVA, andes_base=100.000 MVA, interface_to_system_scale=1.000000
 Transmission embedded workbook events: disabled
 Transmission disturbance: 3-phase bus fault on bus 14 at t=1.000s for 0.080s (rf=0, xf=0.3)
 Transmission primary disturbance: bus fault at bus 14 from t=1.000s to t=1.080s
-Transmission: co-simulation step schedule = 0.003s until t=1.580s, then 0.030s
+Transmission: co-simulation step schedule = 0.003s until t=1.580s, then 0.033s
 Transmission: entered HELICS initialization mode.
 [TX init 01] updated=1/1 P=0.035948 Q=0.016954 (interface=0.035948+j0.016954 pu) |V|=1.008734 ang=-0.177451 dV=1.431e-02 dS=inf
 [TX init 02] updated=1/1 P=0.035880 Q=0.017161 (interface=0.035880+j0.017161 pu) |V|=1.008695 ang=-0.177410 dV=5.669e-05 dS=2.182e-04
@@ -19,130 +19,30 @@ Interface bus 14 initial voltage: 0.992842-0.177989j
 Interface bus 14 initial voltage mag: 1.008670
 Interface bus 14 initial voltage angle: -0.177388
 DistLoad p0=0.035846, q0=0.017287
-Transmission: target simulation time = 60.000 s
-[TX progress] t=0.501s/60.000s state=NEXT_STEP updated=0/1 P=0.035846 Q=0.017287 (interface=0.035846+j0.017287 pu) |V|=1.008670 ang=-0.177388 dt=0.003s
+Transmission: target simulation time = 10.000 s
+[TX progress] t=0.501s/10.000s state=NEXT_STEP updated=0/1 P=0.035846 Q=0.017287 (interface=0.035846+j0.017287 pu) |V|=1.008670 ang=-0.177388 dt=0.003s
 <Fault Fault_Interface>: Applying fault on Bus (idx=14) at t=1.0 sec.
 [TX ALERT] t=1.002s Alert.1 Fault Alert V=0.443690 pu | normalized drop=0.560 pu from 1.000 pu over 0.009 s (ref=1.009 pu)
-[TX progress] t=1.002s/60.000s state=NEXT_STEP updated=0/1 P=0.035846 Q=0.017287 (interface=0.035846+j0.017287 pu) |V|=0.443690 ang=-0.157748 dt=0.003s
+[TX progress] t=1.002s/10.000s state=NEXT_STEP updated=0/1 P=0.035846 Q=0.017287 (interface=0.035846+j0.017287 pu) |V|=0.443690 ang=-0.157748 dt=0.003s
 <Fault Fault_Interface>: Clearing fault on Bus (idx=14) at t=1.08 sec.
-[TX progress] t=1.500s/60.000s state=NEXT_STEP updated=1/1 P=0.061345 Q=0.070867 (interface=0.061345+j0.070867 pu) |V|=1.010976 ang=-0.220955 dt=0.003s
-[TX progress] t=2.010s/60.000s state=NEXT_STEP updated=0/1 P=0.057825 Q=0.065757 (interface=0.057825+j0.065757 pu) |V|=0.995963 ang=-0.309879 dt=0.030s
-[TX progress] t=2.505s/60.000s state=NEXT_STEP updated=0/1 P=0.057284 Q=0.065084 (interface=0.057284+j0.065084 pu) |V|=0.993449 ang=-0.380433 dt=0.030s
-[TX progress] t=3.000s/60.000s state=NEXT_STEP updated=0/1 P=0.057094 Q=0.064846 (interface=0.057094+j0.064846 pu) |V|=0.992271 ang=-0.444454 dt=0.030s
-[TX progress] t=3.528s/60.000s state=NEXT_STEP updated=0/1 P=0.057131 Q=0.064892 (interface=0.057131+j0.064892 pu) |V|=0.992544 ang=-0.503197 dt=0.030s
-[TX progress] t=4.023s/60.000s state=NEXT_STEP updated=0/1 P=0.057159 Q=0.064927 (interface=0.057159+j0.064927 pu) |V|=0.992705 ang=-0.553021 dt=0.030s
-[TX progress] t=4.518s/60.000s state=NEXT_STEP updated=0/1 P=0.057188 Q=0.064964 (interface=0.057188+j0.064964 pu) |V|=0.992888 ang=-0.598721 dt=0.030s
-[TX progress] t=5.013s/60.000s state=NEXT_STEP updated=0/1 P=0.057210 Q=0.064991 (interface=0.057210+j0.064991 pu) |V|=0.993015 ang=-0.642119 dt=0.030s
-[TX progress] t=5.508s/60.000s state=NEXT_STEP updated=0/1 P=0.057133 Q=0.064881 (interface=0.057133+j0.064881 pu) |V|=0.993172 ang=-0.684136 dt=0.030s
-[TX progress] t=6.003s/60.000s state=NEXT_STEP updated=0/1 P=0.056934 Q=0.064614 (interface=0.056934+j0.064614 pu) |V|=0.993375 ang=-0.725437 dt=0.030s
-[TX progress] t=6.501s/60.000s state=NEXT_STEP updated=1/1 P=0.056664 Q=0.064250 (interface=0.056664+j0.064250 pu) |V|=0.993580 ang=-0.766496 dt=0.030s
-[TX progress] t=7.026s/60.000s state=NEXT_STEP updated=0/1 P=0.056325 Q=0.063787 (interface=0.056325+j0.063787 pu) |V|=0.993813 ang=-0.809244 dt=0.030s
-[TX progress] t=7.521s/60.000s state=NEXT_STEP updated=0/1 P=0.055723 Q=0.062766 (interface=0.055723+j0.062766 pu) |V|=0.994323 ang=-0.848814 dt=0.030s
-[TX progress] t=8.016s/60.000s state=NEXT_STEP updated=0/1 P=0.055258 Q=0.062112 (interface=0.055258+j0.062112 pu) |V|=0.994551 ang=-0.887450 dt=0.030s
-[TX progress] t=8.511s/60.000s state=NEXT_STEP updated=0/1 P=0.054664 Q=0.061233 (interface=0.054664+j0.061233 pu) |V|=0.994907 ang=-0.924804 dt=0.030s
-[TX progress] t=9.006s/60.000s state=NEXT_STEP updated=0/1 P=0.054067 Q=0.060354 (interface=0.054067+j0.060354 pu) |V|=0.995245 ang=-0.960793 dt=0.030s
-[TX progress] t=9.501s/60.000s state=NEXT_STEP updated=0/1 P=0.053476 Q=0.059492 (interface=0.053476+j0.059492 pu) |V|=0.995564 ang=-0.995354 dt=0.030s
-[TX progress] t=10.029s/60.000s state=NEXT_STEP updated=0/1 P=0.052857 Q=0.058592 (interface=0.052857+j0.058592 pu) |V|=0.995889 ang=-1.030668 dt=0.030s
-[TX progress] t=10.524s/60.000s state=NEXT_STEP updated=0/1 P=0.052288 Q=0.057767 (interface=0.052288+j0.057767 pu) |V|=0.996183 ang=-1.062392 dt=0.030s
-[TX progress] t=11.019s/60.000s state=NEXT_STEP updated=0/1 P=0.051729 Q=0.056960 (interface=0.051729+j0.056960 pu) |V|=0.996468 ang=-1.092860 dt=0.030s
-[TX progress] t=11.514s/60.000s state=NEXT_STEP updated=0/1 P=0.051180 Q=0.056170 (interface=0.051180+j0.056170 pu) |V|=0.996744 ang=-1.122149 dt=0.030s
-[TX progress] t=12.009s/60.000s state=NEXT_STEP updated=0/1 P=0.050642 Q=0.055399 (interface=0.050642+j0.055399 pu) |V|=0.997013 ang=-1.150326 dt=0.030s
-[TX progress] t=12.504s/60.000s state=NEXT_STEP updated=0/1 P=0.049953 Q=0.054248 (interface=0.049953+j0.054248 pu) |V|=0.997487 ang=-1.177335 dt=0.030s
-[TX progress] t=13.002s/60.000s state=NEXT_STEP updated=1/1 P=0.049408 Q=0.053467 (interface=0.049408+j0.053467 pu) |V|=0.997711 ang=-1.203352 dt=0.030s
-[TX progress] t=13.527s/60.000s state=NEXT_STEP updated=0/1 P=0.048903 Q=0.052743 (interface=0.048903+j0.052743 pu) |V|=0.997943 ang=-1.229533 dt=0.030s
-[TX progress] t=14.022s/60.000s state=NEXT_STEP updated=0/1 P=0.048414 Q=0.052044 (interface=0.048414+j0.052044 pu) |V|=0.998178 ang=-1.253176 dt=0.030s
-[TX progress] t=14.517s/60.000s state=NEXT_STEP updated=0/1 P=0.047935 Q=0.051362 (interface=0.047935+j0.051362 pu) |V|=0.998411 ang=-1.275893 dt=0.030s
-[TX progress] t=15.012s/60.000s state=NEXT_STEP updated=0/1 P=0.047466 Q=0.050696 (interface=0.047466+j0.050696 pu) |V|=0.998639 ang=-1.297731 dt=0.030s
-[TX progress] t=15.507s/60.000s state=NEXT_STEP updated=0/1 P=0.047007 Q=0.050045 (interface=0.047007+j0.050045 pu) |V|=0.998862 ang=-1.318714 dt=0.030s
-[TX progress] t=16.002s/60.000s state=NEXT_STEP updated=0/1 P=0.046557 Q=0.049410 (interface=0.046557+j0.049410 pu) |V|=0.999081 ang=-1.338857 dt=0.030s
-[TX progress] t=16.500s/60.000s state=NEXT_STEP updated=1/1 P=0.046090 Q=0.048754 (interface=0.046090+j0.048754 pu) |V|=0.999311 ang=-1.358278 dt=0.030s
-[TX progress] t=17.025s/60.000s state=NEXT_STEP updated=0/1 P=0.045655 Q=0.048143 (interface=0.045655+j0.048143 pu) |V|=0.999519 ang=-1.377863 dt=0.030s
-[TX progress] t=17.520s/60.000s state=NEXT_STEP updated=0/1 P=0.045231 Q=0.047552 (interface=0.045231+j0.047552 pu) |V|=0.999724 ang=-1.395485 dt=0.030s
-[TX progress] t=18.015s/60.000s state=NEXT_STEP updated=0/1 P=0.044813 Q=0.046974 (interface=0.044813+j0.046974 pu) |V|=0.999926 ang=-1.412302 dt=0.030s
-[TX progress] t=18.510s/60.000s state=NEXT_STEP updated=0/1 P=0.043577 Q=0.045238 (interface=0.043577+j0.045238 pu) |V|=1.000521 ang=-1.428239 dt=0.030s
-[TX progress] t=19.005s/60.000s state=NEXT_STEP updated=0/1 P=0.041645 Q=0.042550 (interface=0.041645+j0.042550 pu) |V|=1.001653 ang=-1.448312 dt=0.030s
-[TX progress] t=19.500s/60.000s state=NEXT_STEP updated=0/1 P=0.050852 Q=0.056884 (interface=0.050852+j0.056884 pu) |V|=0.995402 ang=-1.475105 dt=0.030s
-[TX progress] t=20.028s/60.000s state=NEXT_STEP updated=0/1 P=0.053110 Q=0.060400 (interface=0.053110+j0.060400 pu) |V|=0.994353 ang=-1.504540 dt=0.030s
-[TX progress] t=20.523s/60.000s state=NEXT_STEP updated=0/1 P=0.048394 Q=0.052804 (interface=0.048394+j0.052804 pu) |V|=0.997494 ang=-1.531632 dt=0.030s
-[TX progress] t=21.018s/60.000s state=NEXT_STEP updated=0/1 P=0.050029 Q=0.055477 (interface=0.050029+j0.055477 pu) |V|=0.996606 ang=-1.558654 dt=0.030s
-[TX progress] t=21.513s/60.000s state=NEXT_STEP updated=0/1 P=0.047626 Q=0.051778 (interface=0.047626+j0.051778 pu) |V|=0.998151 ang=-1.583771 dt=0.030s
-[TX progress] t=22.008s/60.000s state=NEXT_STEP updated=0/1 P=0.051276 Q=0.057727 (interface=0.051276+j0.057727 pu) |V|=0.995465 ang=-1.608354 dt=0.030s
-[TX progress] t=22.503s/60.000s state=NEXT_STEP updated=0/1 P=0.047689 Q=0.052237 (interface=0.047689+j0.052237 pu) |V|=0.997938 ang=-1.629697 dt=0.030s
-[TX progress] t=23.001s/60.000s state=NEXT_STEP updated=1/1 P=0.046842 Q=0.050738 (interface=0.046842+j0.050738 pu) |V|=0.998358 ang=-1.650605 dt=0.030s
-[TX progress] t=23.526s/60.000s state=NEXT_STEP updated=0/1 P=0.046542 Q=0.050334 (interface=0.046542+j0.050334 pu) |V|=0.998651 ang=-1.672141 dt=0.030s
-[TX progress] t=24.021s/60.000s state=NEXT_STEP updated=0/1 P=0.046238 Q=0.049932 (interface=0.046238+j0.049932 pu) |V|=0.998820 ang=-1.692188 dt=0.030s
-[TX progress] t=24.516s/60.000s state=NEXT_STEP updated=0/1 P=0.045940 Q=0.049540 (interface=0.045940+j0.049540 pu) |V|=0.998981 ang=-1.711726 dt=0.030s
-[TX progress] t=25.011s/60.000s state=NEXT_STEP updated=0/1 P=0.045648 Q=0.049157 (interface=0.045648+j0.049157 pu) |V|=0.999126 ang=-1.730713 dt=0.030s
-[TX progress] t=25.506s/60.000s state=NEXT_STEP updated=0/1 P=0.045362 Q=0.048783 (interface=0.045362+j0.048783 pu) |V|=0.999267 ang=-1.749098 dt=0.030s
-[TX progress] t=26.001s/60.000s state=NEXT_STEP updated=0/1 P=0.045082 Q=0.048417 (interface=0.045082+j0.048417 pu) |V|=0.999402 ang=-1.766887 dt=0.030s
-[TX progress] t=26.529s/60.000s state=NEXT_STEP updated=0/1 P=0.044808 Q=0.048057 (interface=0.044808+j0.048057 pu) |V|=0.999528 ang=-1.785227 dt=0.030s
-[TX progress] t=27.024s/60.000s state=NEXT_STEP updated=0/1 P=0.044570 Q=0.047743 (interface=0.044570+j0.047743 pu) |V|=0.999636 ang=-1.801877 dt=0.030s
-[TX progress] t=27.519s/60.000s state=NEXT_STEP updated=0/1 P=0.044338 Q=0.047437 (interface=0.044338+j0.047437 pu) |V|=0.999742 ang=-1.818059 dt=0.030s
-[TX progress] t=28.014s/60.000s state=NEXT_STEP updated=0/1 P=0.044112 Q=0.047138 (interface=0.044112+j0.047138 pu) |V|=0.999847 ang=-1.833812 dt=0.030s
-[TX progress] t=28.509s/60.000s state=NEXT_STEP updated=0/1 P=0.043891 Q=0.046847 (interface=0.043891+j0.046847 pu) |V|=0.999949 ang=-1.849158 dt=0.030s
-[TX progress] t=29.004s/60.000s state=NEXT_STEP updated=0/1 P=0.043675 Q=0.046562 (interface=0.043675+j0.046562 pu) |V|=1.000048 ang=-1.864106 dt=0.030s
-[TX progress] t=29.502s/60.000s state=NEXT_STEP updated=1/1 P=0.043451 Q=0.046271 (interface=0.043451+j0.046271 pu) |V|=1.000152 ang=-1.878746 dt=0.030s
-[TX progress] t=30.027s/60.000s state=NEXT_STEP updated=0/1 P=0.043244 Q=0.046001 (interface=0.043244+j0.046001 pu) |V|=1.000244 ang=-1.893763 dt=0.030s
-[TX progress] t=30.522s/60.000s state=NEXT_STEP updated=0/1 P=0.043043 Q=0.045739 (interface=0.043043+j0.045739 pu) |V|=1.000336 ang=-1.907526 dt=0.030s
-[TX progress] t=31.017s/60.000s state=NEXT_STEP updated=0/1 P=0.042866 Q=0.045504 (interface=0.042866+j0.045504 pu) |V|=1.000414 ang=-1.920925 dt=0.030s
-[TX progress] t=31.512s/60.000s state=NEXT_STEP updated=0/1 P=0.042693 Q=0.045275 (interface=0.042693+j0.045275 pu) |V|=1.000492 ang=-1.933983 dt=0.030s
-[TX progress] t=32.007s/60.000s state=NEXT_STEP updated=0/1 P=0.042524 Q=0.045052 (interface=0.042524+j0.045052 pu) |V|=1.000569 ang=-1.946723 dt=0.030s
-[TX progress] t=32.502s/60.000s state=NEXT_STEP updated=0/1 P=0.042360 Q=0.044834 (interface=0.042360+j0.044834 pu) |V|=1.000644 ang=-1.959160 dt=0.030s
-[TX progress] t=33.000s/60.000s state=NEXT_STEP updated=1/1 P=0.042189 Q=0.044609 (interface=0.042189+j0.044609 pu) |V|=1.000724 ang=-1.971372 dt=0.030s
-[TX progress] t=33.525s/60.000s state=NEXT_STEP updated=0/1 P=0.042032 Q=0.044400 (interface=0.042032+j0.044400 pu) |V|=1.000796 ang=-1.983932 dt=0.030s
-[TX progress] t=34.020s/60.000s state=NEXT_STEP updated=0/1 P=0.041878 Q=0.044198 (interface=0.041878+j0.044198 pu) |V|=1.000867 ang=-1.995477 dt=0.030s
-[TX progress] t=34.515s/60.000s state=NEXT_STEP updated=0/1 P=0.041729 Q=0.044000 (interface=0.041729+j0.044000 pu) |V|=1.000936 ang=-2.006738 dt=0.030s
-[TX progress] t=35.010s/60.000s state=NEXT_STEP updated=0/1 P=0.041583 Q=0.043808 (interface=0.041583+j0.043808 pu) |V|=1.001004 ang=-2.017720 dt=0.030s
-[TX progress] t=35.505s/60.000s state=NEXT_STEP updated=0/1 P=0.041441 Q=0.043619 (interface=0.041441+j0.043619 pu) |V|=1.001070 ang=-2.028427 dt=0.030s
-[TX progress] t=36.000s/60.000s state=NEXT_STEP updated=0/1 P=0.041335 Q=0.043471 (interface=0.041335+j0.043471 pu) |V|=1.001114 ang=-2.038887 dt=0.030s
-[TX progress] t=36.528s/60.000s state=NEXT_STEP updated=0/1 P=0.041226 Q=0.043318 (interface=0.041226+j0.043318 pu) |V|=1.001162 ang=-2.049810 dt=0.030s
-[TX progress] t=37.023s/60.000s state=NEXT_STEP updated=0/1 P=0.041126 Q=0.043178 (interface=0.041126+j0.043178 pu) |V|=1.001209 ang=-2.059867 dt=0.030s
-[TX progress] t=37.518s/60.000s state=NEXT_STEP updated=0/1 P=0.041029 Q=0.043041 (interface=0.041029+j0.043041 pu) |V|=1.001255 ang=-2.069766 dt=0.030s
-[TX progress] t=38.013s/60.000s state=NEXT_STEP updated=0/1 P=0.040933 Q=0.042907 (interface=0.040933+j0.042907 pu) |V|=1.001300 ang=-2.079511 dt=0.030s
-[TX progress] t=38.508s/60.000s state=NEXT_STEP updated=0/1 P=0.040840 Q=0.042777 (interface=0.040840+j0.042777 pu) |V|=1.001345 ang=-2.089100 dt=0.030s
-[TX progress] t=39.003s/60.000s state=NEXT_STEP updated=0/1 P=0.040749 Q=0.042648 (interface=0.040749+j0.042648 pu) |V|=1.001389 ang=-2.098532 dt=0.030s
-[TX progress] t=39.501s/60.000s state=NEXT_STEP updated=1/1 P=0.040780 Q=0.042705 (interface=0.040780+j0.042705 pu) |V|=1.001394 ang=-2.107814 dt=0.030s
-[TX progress] t=40.026s/60.000s state=NEXT_STEP updated=0/1 P=0.038839 Q=0.039664 (interface=0.038839+j0.039664 pu) |V|=1.002643 ang=-2.116851 dt=0.030s
-[TX progress] t=40.521s/60.000s state=NEXT_STEP updated=0/1 P=0.040714 Q=0.042560 (interface=0.040714+j0.042560 pu) |V|=1.001407 ang=-2.125731 dt=0.030s
-[TX progress] t=41.016s/60.000s state=NEXT_STEP updated=0/1 P=0.041337 Q=0.043699 (interface=0.041337+j0.043699 pu) |V|=1.000884 ang=-2.134209 dt=0.030s
-[TX progress] t=41.511s/60.000s state=NEXT_STEP updated=0/1 P=0.035599 Q=0.034894 (interface=0.035599+j0.034894 pu) |V|=1.005030 ang=-2.141056 dt=0.030s
-[TX progress] t=42.006s/60.000s state=NEXT_STEP updated=0/1 P=0.039830 Q=0.041087 (interface=0.039830+j0.041087 pu) |V|=1.001947 ang=-2.150281 dt=0.030s
-[TX progress] t=42.501s/60.000s state=NEXT_STEP updated=0/1 P=0.039710 Q=0.040889 (interface=0.039710+j0.040889 pu) |V|=1.002063 ang=-2.158356 dt=0.030s
-[TX progress] t=43.029s/60.000s state=NEXT_STEP updated=0/1 P=0.041745 Q=0.044505 (interface=0.041745+j0.044505 pu) |V|=1.000483 ang=-2.167438 dt=0.030s
-[TX progress] t=43.524s/60.000s state=NEXT_STEP updated=0/1 P=0.039746 Q=0.040935 (interface=0.039746+j0.040935 pu) |V|=1.002080 ang=-2.174555 dt=0.030s
-[TX progress] t=44.019s/60.000s state=NEXT_STEP updated=0/1 P=0.039673 Q=0.040814 (interface=0.039673+j0.040814 pu) |V|=1.002118 ang=-2.181880 dt=0.030s
-[TX progress] t=44.514s/60.000s state=NEXT_STEP updated=0/1 P=0.039401 Q=0.040380 (interface=0.039401+j0.040380 pu) |V|=1.002293 ang=-2.189019 dt=0.030s
-[TX progress] t=45.009s/60.000s state=NEXT_STEP updated=0/1 P=0.039129 Q=0.039954 (interface=0.039129+j0.039954 pu) |V|=1.002342 ang=-2.196188 dt=0.030s
-[TX progress] t=45.504s/60.000s state=NEXT_STEP updated=0/1 P=0.039401 Q=0.040371 (interface=0.039401+j0.040371 pu) |V|=1.002184 ang=-2.203525 dt=0.030s
-[TX progress] t=46.002s/60.000s state=NEXT_STEP updated=1/1 P=0.039371 Q=0.040306 (interface=0.039371+j0.040306 pu) |V|=1.002230 ang=-2.210969 dt=0.030s
-[TX progress] t=46.527s/60.000s state=NEXT_STEP updated=0/1 P=0.040014 Q=0.041363 (interface=0.040014+j0.041363 pu) |V|=1.001821 ang=-2.218866 dt=0.030s
-[TX progress] t=47.022s/60.000s state=NEXT_STEP updated=0/1 P=0.041425 Q=0.043445 (interface=0.041425+j0.043445 pu) |V|=1.000894 ang=-2.226359 dt=0.030s
-[TX progress] t=47.517s/60.000s state=NEXT_STEP updated=0/1 P=0.037611 Q=0.037694 (interface=0.037611+j0.037694 pu) |V|=1.003276 ang=-2.232737 dt=0.030s
-[TX progress] t=48.012s/60.000s state=NEXT_STEP updated=0/1 P=0.037648 Q=0.037732 (interface=0.037648+j0.037732 pu) |V|=1.003256 ang=-2.239860 dt=0.030s
-[TX progress] t=48.507s/60.000s state=NEXT_STEP updated=0/1 P=0.038615 Q=0.039137 (interface=0.038615+j0.039137 pu) |V|=1.002703 ang=-2.247239 dt=0.030s
-[TX progress] t=49.002s/60.000s state=NEXT_STEP updated=0/1 P=0.038911 Q=0.039593 (interface=0.038911+j0.039593 pu) |V|=1.002511 ang=-2.254487 dt=0.030s
-[TX progress] t=49.500s/60.000s state=NEXT_STEP updated=1/1 P=0.039071 Q=0.039841 (interface=0.039071+j0.039841 pu) |V|=1.002299 ang=-2.261712 dt=0.030s
-[TX progress] t=50.025s/60.000s state=NEXT_STEP updated=0/1 P=0.038469 Q=0.038919 (interface=0.038469+j0.038919 pu) |V|=1.002784 ang=-2.268940 dt=0.030s
-[TX progress] t=50.520s/60.000s state=NEXT_STEP updated=0/1 P=0.038849 Q=0.039509 (interface=0.038849+j0.039509 pu) |V|=1.002524 ang=-2.275869 dt=0.030s
-[TX progress] t=51.015s/60.000s state=NEXT_STEP updated=0/1 P=0.040788 Q=0.042880 (interface=0.040788+j0.042880 pu) |V|=1.001079 ang=-2.282978 dt=0.030s
-[TX progress] t=51.510s/60.000s state=NEXT_STEP updated=0/1 P=0.039765 Q=0.041032 (interface=0.039765+j0.041032 pu) |V|=1.001827 ang=-2.289102 dt=0.030s
-[TX progress] t=52.005s/60.000s state=NEXT_STEP updated=0/1 P=0.037612 Q=0.037649 (interface=0.037612+j0.037649 pu) |V|=1.003255 ang=-2.294807 dt=0.030s
-[TX progress] t=52.500s/60.000s state=NEXT_STEP updated=0/1 P=0.038688 Q=0.039274 (interface=0.038688+j0.039274 pu) |V|=1.002621 ang=-2.301238 dt=0.030s
-[TX progress] t=53.028s/60.000s state=NEXT_STEP updated=0/1 P=0.038188 Q=0.038504 (interface=0.038188+j0.038504 pu) |V|=1.002912 ang=-2.307783 dt=0.030s
-[TX progress] t=53.523s/60.000s state=NEXT_STEP updated=0/1 P=0.041236 Q=0.043833 (interface=0.041236+j0.043833 pu) |V|=1.000624 ang=-2.314574 dt=0.030s
-[TX progress] t=54.018s/60.000s state=NEXT_STEP updated=0/1 P=0.039458 Q=0.040550 (interface=0.039458+j0.040550 pu) |V|=1.002065 ang=-2.320322 dt=0.030s
-[TX progress] t=54.513s/60.000s state=NEXT_STEP updated=0/1 P=0.038192 Q=0.038517 (interface=0.038192+j0.038517 pu) |V|=1.002890 ang=-2.326115 dt=0.030s
-[TX progress] t=55.008s/60.000s state=NEXT_STEP updated=0/1 P=0.040051 Q=0.041634 (interface=0.040051+j0.041634 pu) |V|=1.001556 ang=-2.332418 dt=0.030s
-[TX progress] t=55.503s/60.000s state=NEXT_STEP updated=0/1 P=0.036679 Q=0.036303 (interface=0.036679+j0.036303 pu) |V|=1.003797 ang=-2.337529 dt=0.030s
-[TX progress] t=56.001s/60.000s state=NEXT_STEP updated=1/1 P=0.038333 Q=0.038731 (interface=0.038333+j0.038731 pu) |V|=1.002803 ang=-2.343591 dt=0.030s
-[TX progress] t=56.526s/60.000s state=NEXT_STEP updated=0/1 P=0.038154 Q=0.038474 (interface=0.038154+j0.038474 pu) |V|=1.002884 ang=-2.349521 dt=0.030s
-[TX progress] t=57.021s/60.000s state=NEXT_STEP updated=0/1 P=0.039458 Q=0.040620 (interface=0.039458+j0.040620 pu) |V|=1.001969 ang=-2.355341 dt=0.030s
-[TX progress] t=57.516s/60.000s state=NEXT_STEP updated=0/1 P=0.037900 Q=0.038088 (interface=0.037900+j0.038088 pu) |V|=1.003037 ang=-2.360501 dt=0.030s
-[TX progress] t=58.011s/60.000s state=NEXT_STEP updated=0/1 P=0.039505 Q=0.040728 (interface=0.039505+j0.040728 pu) |V|=1.001914 ang=-2.366264 dt=0.030s
-[TX progress] t=58.506s/60.000s state=NEXT_STEP updated=0/1 P=0.037780 Q=0.037909 (interface=0.037780+j0.037909 pu) |V|=1.003107 ang=-2.371252 dt=0.030s
-[TX progress] t=59.001s/60.000s state=NEXT_STEP updated=0/1 P=0.039392 Q=0.040550 (interface=0.039392+j0.040550 pu) |V|=1.001982 ang=-2.376878 dt=0.030s
-[TX progress] t=59.529s/60.000s state=NEXT_STEP updated=0/1 P=0.039263 Q=0.040332 (interface=0.039263+j0.040332 pu) |V|=1.002071 ang=-2.382413 dt=0.030s
-[TX progress] t=60.000s/60.000s state=NEXT_STEP updated=0/1 P=0.037915 Q=0.038130 (interface=0.037915+j0.038130 pu) |V|=1.003000 ang=-2.387028 dt=0.030s
+[TX progress] t=1.500s/10.000s state=NEXT_STEP updated=1/1 P=0.061345 Q=0.070867 (interface=0.061345+j0.070867 pu) |V|=1.010976 ang=-0.220956 dt=0.003s
+[TX progress] t=2.013s/10.000s state=NEXT_STEP updated=0/1 P=0.057822 Q=0.065753 (interface=0.057822+j0.065753 pu) |V|=0.995882 ang=-0.310391 dt=0.033s
+[TX progress] t=2.517s/10.000s state=NEXT_STEP updated=0/1 P=0.057284 Q=0.065084 (interface=0.057284+j0.065084 pu) |V|=0.993441 ang=-0.382029 dt=0.033s
+[TX progress] t=3.021s/10.000s state=NEXT_STEP updated=0/1 P=0.057091 Q=0.064841 (interface=0.057091+j0.064841 pu) |V|=0.992255 ang=-0.447015 dt=0.033s
+[TX progress] t=3.525s/10.000s state=NEXT_STEP updated=0/1 P=0.057130 Q=0.064891 (interface=0.057130+j0.064891 pu) |V|=0.992543 ang=-0.502904 dt=0.033s
+[TX progress] t=4.029s/10.000s state=NEXT_STEP updated=0/1 P=0.057159 Q=0.064927 (interface=0.057159+j0.064927 pu) |V|=0.992707 ang=-0.553618 dt=0.033s
+[TX progress] t=4.500s/10.000s state=NEXT_STEP updated=1/1 P=0.057188 Q=0.064964 (interface=0.057188+j0.064964 pu) |V|=0.992880 ang=-0.597129 dt=0.033s
+[TX progress] t=5.001s/10.000s state=NEXT_STEP updated=0/1 P=0.057210 Q=0.064991 (interface=0.057210+j0.064991 pu) |V|=0.993013 ang=-0.641103 dt=0.033s
+[TX progress] t=5.505s/10.000s state=NEXT_STEP updated=0/1 P=0.057134 Q=0.064883 (interface=0.057134+j0.064883 pu) |V|=0.993171 ang=-0.683900 dt=0.033s
+[TX progress] t=6.009s/10.000s state=NEXT_STEP updated=0/1 P=0.056932 Q=0.064611 (interface=0.056932+j0.064611 pu) |V|=0.993377 ang=-0.725951 dt=0.033s
+[TX progress] t=6.513s/10.000s state=NEXT_STEP updated=0/1 P=0.056675 Q=0.064266 (interface=0.056675+j0.064266 pu) |V|=0.993573 ang=-0.767500 dt=0.033s
+[TX progress] t=7.017s/10.000s state=NEXT_STEP updated=0/1 P=0.056333 Q=0.063799 (interface=0.056333+j0.063799 pu) |V|=0.993808 ang=-0.808533 dt=0.033s
+[TX progress] t=7.521s/10.000s state=NEXT_STEP updated=0/1 P=0.055725 Q=0.062768 (interface=0.055725+j0.062768 pu) |V|=0.994323 ang=-0.848827 dt=0.033s
+[TX progress] t=8.025s/10.000s state=NEXT_STEP updated=0/1 P=0.055251 Q=0.062101 (interface=0.055251+j0.062101 pu) |V|=0.994553 ang=-0.888150 dt=0.033s
+[TX progress] t=8.529s/10.000s state=NEXT_STEP updated=0/1 P=0.054644 Q=0.061204 (interface=0.054644+j0.061204 pu) |V|=0.994918 ang=-0.926142 dt=0.033s
+[TX progress] t=9.000s/10.000s state=NEXT_STEP updated=1/1 P=0.054042 Q=0.060320 (interface=0.054042+j0.060320 pu) |V|=0.995261 ang=-0.960362 dt=0.033s
+[TX progress] t=9.501s/10.000s state=NEXT_STEP updated=0/1 P=0.053478 Q=0.059495 (interface=0.053478+j0.059495 pu) |V|=0.995562 ang=-0.995359 dt=0.033s
+[TX progress] t=10.000s/10.000s state=NEXT_STEP updated=0/1 P=0.052887 Q=0.058635 (interface=0.052887+j0.058635 pu) |V|=0.995874 ang=-1.028773 dt=0.033s
 Transmission: saved timeseries CSV to /home/teng/benchmark_118_10_8500_Andes_OpenDSS/FIDVR/transmission_timeseries.csv
 Transmission: saved alert CSV to /home/teng/benchmark_118_10_8500_Andes_OpenDSS/FIDVR/bus14_fidvr_alerts.csv
 [TX ALERT SUMMARY] Bus 14 |V| Alert.1 Fault Alert: triggered at t=1.002s, V=0.4437 pu (normalized=0.4399 pu). normalized drop=0.560 pu from 1.000 pu over 0.009 s (ref=1.009 pu)

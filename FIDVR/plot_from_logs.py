@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Load transmission-side co-simulation data and plot:
-  - Total P/Q vs time
+  - Total active power vs time
+  - Total reactive power vs time
   - Bus |V| vs time
-  - Combined vertical subplots (shared x-axis)
 
 Preferred data source order:
   1. transmission_timeseries.csv beside the provided log
@@ -101,7 +101,7 @@ FEEDER_ANGLE_TOL_DEG = 5e-6
 FIDVR_STAGE_LABELS = {
     "FAULT_ACTIVE": "Fault",
     "STALLED_MOTORS": "Stalled Motors",
-    "OVERSHOOT": "Overshoot",
+    "OVERSHOOT": "Voltage Support",
     "CAPS_OFF": "Caps Off",
     "LOAD_RESTORATION": "Load Restoration",
 }
@@ -112,6 +112,8 @@ FIDVR_STAGE_COLORS = {
     "CAPS_OFF": "#4575b4",
     "LOAD_RESTORATION": "#74add1",
 }
+MOTOR_TRIPPED_COLOR = "#7b3294"
+LINE_OUTAGE_COLOR = "#777777"
 ALERT_TEXT_Y = {
     "Alert.1": 0.06,
     "Alert.2": 0.13,
@@ -493,6 +495,49 @@ def _time_value_in_plot_units(t_seconds: float, xlabel: str) -> float:
     return t_seconds
 
 
+def _bar_segments_from_intervals(intervals, xlabel: str):
+    segments = []
+    for start, end in intervals:
+        x_start = _time_value_in_plot_units(float(start), xlabel)
+        x_end = _time_value_in_plot_units(float(end), xlabel)
+        width = max(0.0, x_end - x_start)
+        if width > 0.0:
+            segments.append((x_start, width))
+    return segments
+
+
+def _extract_positive_count_intervals(by_t: pd.DataFrame | None, column: str):
+    if by_t is None or column not in by_t.columns or by_t[column].dropna().empty:
+        return []
+
+    times = pd.to_numeric(by_t["t_granted"], errors="coerce")
+    counts = pd.to_numeric(by_t[column], errors="coerce").fillna(0)
+    intervals = []
+    active = False
+    start = None
+
+    for time_s, count in zip(times, counts):
+        if not math.isfinite(float(time_s)):
+            continue
+        is_active = count > 0
+        if is_active and not active:
+            start = float(time_s)
+            active = True
+        elif active and not is_active:
+            end = float(time_s)
+            if start is not None and end > start:
+                intervals.append((start, end))
+            start = None
+            active = False
+
+    valid_times = times.dropna()
+    if active and start is not None and not valid_times.empty:
+        end = float(valid_times.iloc[-1])
+        if end > start:
+            intervals.append((start, end))
+    return intervals
+
+
 def _extract_disturbance_intervals(df: pd.DataFrame):
     status_column = None
     line_idx_column = None
@@ -642,6 +687,23 @@ def _load_fidvr_stage_intervals(reference_dir: Path):
     return intervals
 
 
+def _load_feeder_stage_data(reference_dir: Path) -> pd.DataFrame | None:
+    csv_path = reference_dir / "feeder_1_distribution_voltage.csv"
+    if not csv_path.exists():
+        return None
+
+    df = pd.read_csv(csv_path)
+    if "t_granted" not in df.columns:
+        return None
+    return (
+        df.dropna(subset=["t_granted"])
+        .sort_values("t_granted")
+        .groupby("t_granted", as_index=False)
+        .last()
+        .sort_values("t_granted")
+    )
+
+
 def _add_fidvr_stage_overlays(ax, stage_intervals, xlabel: str):
     seen = set()
     for start, end, stage in stage_intervals:
@@ -658,6 +720,101 @@ def _add_fidvr_stage_overlays(ax, stage_intervals, xlabel: str):
             alpha=0.06,
             label=label,
         )
+
+
+def _add_timeline_row(ax, y_pos: int, segments, color: str, label: str):
+    if not segments:
+        return
+    ax.broken_barh(
+        segments,
+        (y_pos - 0.34, 0.68),
+        facecolors=color,
+        edgecolors=color,
+        alpha=0.28,
+        linewidth=1.0,
+    )
+    for start, width in segments:
+        if width < 2.0:
+            continue
+        ax.text(
+            start + 0.5 * width,
+            y_pos,
+            label,
+            ha="center",
+            va="center",
+            fontsize=7.2,
+            color=color,
+            alpha=0.8,
+            clip_on=True,
+        )
+
+
+def _add_transmission_timeline(
+    ax,
+    stage_intervals,
+    disturbance_intervals,
+    alerts: pd.DataFrame,
+    xlabel: str,
+    feeder_by_t: pd.DataFrame | None = None,
+):
+    rows = [
+        ("Fault", "FAULT_ACTIVE", FIDVR_STAGE_COLORS["FAULT_ACTIVE"]),
+        ("Line outage", "LINE_OUTAGE", LINE_OUTAGE_COLOR),
+        ("Caps off", "CAPS_OFF", FIDVR_STAGE_COLORS["CAPS_OFF"]),
+        ("Stalled motors", "STALLED_MOTORS", FIDVR_STAGE_COLORS["STALLED_MOTORS"]),
+        ("Contactor opened", "CONTACTOR_OPEN", "#8c8c8c"),
+        ("Thermal trip", "MOTOR_TRIPPED", MOTOR_TRIPPED_COLOR),
+        ("Voltage support", "OVERSHOOT", FIDVR_STAGE_COLORS["OVERSHOOT"]),
+        ("Load restoration", "LOAD_RESTORATION", FIDVR_STAGE_COLORS["LOAD_RESTORATION"]),
+        ("Alert.3 active", "ALERT3_ACTIVE", ALERT_COLORS["Alert.3"]),
+    ]
+
+    stage_map = {stage: [] for _, stage, _ in rows}
+    for start, end, stage in stage_intervals:
+        if stage in stage_map:
+            stage_map[stage].append((start, end))
+
+    if isinstance(disturbance_intervals, dict):
+        stage_map["FAULT_ACTIVE"].extend(disturbance_intervals.get("fault_intervals", []))
+        stage_map["LINE_OUTAGE"].extend(disturbance_intervals.get("line_intervals", []))
+
+    contactor_intervals = _extract_positive_count_intervals(
+        feeder_by_t, "motor_contactor_open_groups"
+    )
+    thermal_intervals = _extract_positive_count_intervals(
+        feeder_by_t, "motor_thermal_trip_groups"
+    )
+    if contactor_intervals or thermal_intervals:
+        stage_map["CONTACTOR_OPEN"].extend(contactor_intervals)
+        stage_map["MOTOR_TRIPPED"].extend(thermal_intervals)
+    else:
+        stage_map["MOTOR_TRIPPED"].extend(
+            _extract_positive_count_intervals(feeder_by_t, "motor_tripped_groups")
+        )
+
+    alert3_rows = alerts.loc[alerts["alert_id"] == "Alert.3"]
+    if not alert3_rows.empty and bool(alert3_rows.iloc[0]["triggered"]):
+        row = alert3_rows.iloc[0]
+        start = float(row["start_time_s"])
+        end = float(row["end_time_s"])
+        if math.isfinite(start) and math.isfinite(end):
+            stage_map["ALERT3_ACTIVE"].append((start, end))
+
+    for y_pos, (label, stage, color) in enumerate(rows):
+        segments = _bar_segments_from_intervals(stage_map.get(stage, []), xlabel)
+        _add_timeline_row(ax, y_pos, segments, color, label)
+
+    ax.set_yticks(range(len(rows)))
+    ax.set_yticklabels([label for label, _, _ in rows])
+    ax.set_ylim(-0.6, len(rows) - 0.4)
+    ax.invert_yaxis()
+    ax.grid(True, axis="x", alpha=0.24)
+    ax.grid(False, axis="y")
+    ax.set_xlabel(xlabel)
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
 
 def _add_alert_threshold_lines(ax, reference_voltage_pu: float):
@@ -783,6 +940,7 @@ def make_plots(
         "fault_intervals": fault_intervals,
     }
     fidvr_stage_intervals = _load_fidvr_stage_intervals(out_dir)
+    feeder_by_t = _load_feeder_stage_data(out_dir)
     alert_signal = by_t["Vmag"].ffill().bfill()
     reference_voltage_pu = float(alert_signal.dropna().iloc[0])
     alerts = detect_fidvr_alerts(
@@ -808,6 +966,41 @@ def make_plots(
         )
 
     d_pq = by_t.dropna(subset=["P_total", "Q_total"])
+
+    def save_power_plot(column: str, ylabel: str, filename: str, color: str) -> None:
+        d_power = by_t.dropna(subset=[column])
+        fig, ax = plt.subplots(figsize=(8.4, 4.6))
+        if len(d_power):
+            x_power, _ = _time_axis_seconds_or_hours(d_power["t_granted"])
+            ax.plot(x_power, d_power[column], color=color, linewidth=1.9)
+            _add_disturbance_overlays(
+                ax,
+                disturbance_intervals,
+                xlabel,
+                line_idx=disturbance_line_idx,
+            )
+            _apply_zoom_ylim(ax, [d_power[column]], min_pad=1e-5)
+        ax.set_ylabel(ylabel)
+        ax.set_xlabel(xlabel)
+        ax.grid(True, color="0.86", linewidth=0.8)
+        _apply_manual_xlim(ax, x_limits)
+        fig.tight_layout()
+        fig.savefig(out_dir / filename, dpi=300)
+        plt.close(fig)
+
+    save_power_plot(
+        "P_total",
+        "Total active power P (pu)",
+        "total_active_power_vs_time.png",
+        "tab:blue",
+    )
+    save_power_plot(
+        "Q_total",
+        "Total reactive power Q (pu)",
+        "total_reactive_power_vs_time.png",
+        "tab:orange",
+    )
+
     plt.figure()
     if len(d_pq):
         x_pq, _ = _time_axis_seconds_or_hours(d_pq["t_granted"])
@@ -824,30 +1017,37 @@ def make_plots(
         _apply_zoom_ylim(plt.gca(), [d_pq["P_total"], d_pq["Q_total"]], min_pad=1e-5)
     plt.xlabel(xlabel)
     plt.ylabel("Total Distribution Load (pu)")
-    plt.title("Total Distribution Load vs Time")
+    _apply_manual_xlim(plt.gca(), x_limits)
     plt.tight_layout()
     plt.savefig(out_dir / "total_pq_vs_time.png", dpi=300)
     plt.close()
 
     d_v = by_t.dropna(subset=["Vmag"])
-    plt.figure()
+    fig, ax = plt.subplots(figsize=(8.4, 4.8))
     if len(d_v):
         x_v, _ = _time_axis_seconds_or_hours(d_v["t_granted"])
-        plt.plot(x_v, d_v["Vmag"])
-        _add_alert_threshold_lines(plt.gca(), reference_voltage_pu)
-        _add_alert_window_overlay(plt.gca(), alerts, xlabel)
-        _add_alert_overlays(plt.gca(), alerts, xlabel)
-        _add_fidvr_stage_overlays(plt.gca(), fidvr_stage_intervals, xlabel)
-        _add_disturbance_overlays(plt.gca(), disturbance_intervals, xlabel)
-        _apply_zoom_ylim(plt.gca(), [d_v["Vmag"]], min_pad=5e-4)
-        _apply_manual_voltage_ylim(plt.gca(), voltage_y_limits)
-    plt.xlabel(xlabel)
-    plt.ylabel(f"Bus {bus} Voltage Magnitude |V| (pu)")
-    plt.title(f"Bus {bus} Voltage Magnitude vs Time")
-    _apply_manual_xlim(plt.gca(), x_limits)
-    plt.tight_layout()
-    plt.savefig(out_dir / f"bus{bus}_voltage_vs_time.png", dpi=300)
-    plt.close()
+        ax.plot(x_v, d_v["Vmag"], color="tab:blue", linewidth=2.0, label=f"Bus {bus} |V|")
+        _add_alert_threshold_lines(ax, reference_voltage_pu)
+        _add_alert_overlays(ax, alerts, xlabel)
+        _apply_zoom_ylim(ax, [d_v["Vmag"]], min_pad=5e-4)
+        _apply_manual_voltage_ylim(ax, voltage_y_limits)
+    ax.set_ylabel(f"Bus {bus} |V| (pu)")
+    ax.set_xlabel(xlabel)
+    ax.grid(True, color="0.86", linewidth=0.8)
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(
+            handles,
+            labels,
+            loc="center left",
+            bbox_to_anchor=(1.01, 0.5),
+            fontsize=8,
+            framealpha=0.95,
+        )
+    _apply_manual_xlim(ax, x_limits)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"bus{bus}_voltage_vs_time.png", dpi=300)
+    plt.close(fig)
 
     d_ang = _dropna_if_present(by_t, ["Vang_rad"])
     if len(d_ang):
@@ -865,46 +1065,9 @@ def make_plots(
         plt.close()
         extra_pngs.append(angle_png.name)
 
-    fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8.5, 6.5))
-    if len(d_pq):
-        x_pq, _ = _time_axis_seconds_or_hours(d_pq["t_granted"])
-        ax[0].plot(x_pq, d_pq["P_total"], label="P_total (pu)")
-        ax[0].plot(x_pq, d_pq["Q_total"], label="Q_total (pu)")
-        _add_fidvr_stage_overlays(ax[0], fidvr_stage_intervals, xlabel)
-        _add_disturbance_overlays(
-            ax[0],
-            disturbance_intervals,
-            xlabel,
-            line_idx=disturbance_line_idx,
-        )
-        _apply_zoom_ylim(ax[0], [d_pq["P_total"], d_pq["Q_total"]], min_pad=1e-5)
-        ax[0].set_ylabel("Total Load (pu)")
-        ax[0].legend()
-    ax[0].set_title("Aggregated feeder load")
-    ax[0].grid(True)
-
-    if len(d_v):
-        x_v, _ = _time_axis_seconds_or_hours(d_v["t_granted"])
-        ax[1].plot(x_v, d_v["Vmag"], label=f"Bus {bus} |V|")
-        _add_alert_threshold_lines(ax[1], reference_voltage_pu)
-        _add_alert_window_overlay(ax[1], alerts, xlabel)
-        _add_alert_overlays(ax[1], alerts, xlabel)
-        _add_fidvr_stage_overlays(ax[1], fidvr_stage_intervals, xlabel)
-        _add_disturbance_overlays(ax[1], disturbance_intervals, xlabel)
-        ax[1].set_ylabel(f"Bus {bus} |V| (pu)")
-        #_apply_zoom_ylim(ax[1], [d_v["Vmag"]], min_pad=5e-4)
-        ax[1].set_ylim(0.4, 1.1)
-        _apply_manual_voltage_ylim(ax[1], voltage_y_limits)
-        ax[1].set_title(f"Transmission bus {bus} voltage")
-        ax[1].legend()
-    ax[1].set_xlabel(xlabel)
-    ax[1].grid(True)
-
-    fig.suptitle("ANDES-OpenDSS Co-simulation: Load and Voltage vs Time", fontsize=14)
-    _apply_manual_xlim(ax, x_limits)
-    plt.tight_layout()
-    plt.savefig(out_dir / f"total_pq_and_bus{bus}_voltage_vs_time.png", dpi=300)
-    plt.close(fig)
+    combined_load_voltage_path = out_dir / f"total_pq_and_bus{bus}_voltage_vs_time.png"
+    if combined_load_voltage_path.exists():
+        combined_load_voltage_path.unlink()
 
     fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8.5, 6.5))
     if len(d_pq):
@@ -1263,9 +1426,10 @@ def make_plots(
     print(f"[OK] Saved CSV: {alert_csv_path}")
     print(f"[OK] Saved CSV: {csv_path}")
     print(f"[OK] Saved PNGs to: {out_dir}")
+    print("     - total_active_power_vs_time.png")
+    print("     - total_reactive_power_vs_time.png")
     print("     - total_pq_vs_time.png")
     print(f"     - bus{bus}_voltage_vs_time.png")
-    print(f"     - total_pq_and_bus{bus}_voltage_vs_time.png")
     print("     - total_pq_and_iteration_vs_time.png")
     for png_name in extra_pngs:
         print(f"     - {png_name}")

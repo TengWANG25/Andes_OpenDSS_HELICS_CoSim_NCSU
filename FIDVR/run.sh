@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail # Strict error handling
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${RUN_OUTPUT_DIR:-}" ]]; then
+  RUN_OUTPUT_DIR="${COSIM_OUTPUT_DIR:-${FIDVR_OUTPUT_DIR:-$SCRIPT_DIR}}"
+fi
+mkdir -p "$RUN_OUTPUT_DIR"
+RUN_OUTPUT_DIR="$(cd "$RUN_OUTPUT_DIR" && pwd)"
+COSIM_OUTPUT_DIR="$RUN_OUTPUT_DIR"
+cd "$SCRIPT_DIR"
+
 PORT="${PORT:-23406}" # Broker port
 FIDVR_ENABLE="${FIDVR_ENABLE:-0}"
 FIDVR_PROFILE="${FIDVR_PROFILE:-scaled}"
@@ -16,7 +25,7 @@ if [[ -n "${TX_DISTURBANCE_MODE+x}" || -n "${TX_DISTURBANCE_LINE+x}" || \
       -n "${TX_DISTURBANCE_LINES+x}" || -n "${TX_DISTURBANCE_TIME+x}" || \
       -n "${TX_DISTURBANCE_DURATION+x}" ]]; then
   echo "The old TX_DISTURBANCE_* line-trip/reclose interface was removed." >&2
-  echo "Use TX_FAULT_* for the primary bus fault and TX_POSTFAULT_* for optional post-fault line trips." >&2
+  echo "Use TX_EVENT_KIND=bus_fault with TX_FAULT_* or TX_EVENT_KIND=line_trip_reclose with TX_LINE_TRIP_*." >&2
   exit 2
 fi
 
@@ -82,8 +91,11 @@ else
   TX_KEEP_BUILTIN_EVENTS="$TX_KEEP_BUILTIN_EVENTS"
 fi
 # Fault-based disturbance defaults 
+TX_EVENT_KIND="${TX_EVENT_KIND:-bus_fault}"
 TX_POSTFAULT_LINES="${TX_POSTFAULT_LINES:-}"
 TX_POSTFAULT_LINE="${TX_POSTFAULT_LINE:-}"
+TX_LINE_TRIP_LINES="${TX_LINE_TRIP_LINES:-}"
+TX_LINE_TRIP_LINE="${TX_LINE_TRIP_LINE:-}"
 if [[ -z "${TX_POSTFAULT_TRIP_DELAY:-}" ]]; then
   TX_POSTFAULT_TRIP_DELAY="0.01"
 fi
@@ -103,6 +115,8 @@ TX_FAULT_RF="${TX_FAULT_RF:-0.0}"
 # textbook near-zero reactance starting point. This default keeps the
 # ANDES Fault path stable while still producing a strong initiating sag.
 TX_FAULT_XF="${TX_FAULT_XF:-0.3}"
+TX_LINE_TRIP_TIME="${TX_LINE_TRIP_TIME:-$TX_FAULT_TIME}"
+TX_LINE_TRIP_DURATION="${TX_LINE_TRIP_DURATION:-$TX_FAULT_DURATION}"
 if [[ -z "${TARGET_TIME:-}" ]]; then
   if [[ "$FIDVR_ENABLE" == "1" ]]; then
     TARGET_TIME="20.0"
@@ -120,7 +134,7 @@ PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-5}"
 # timer resolution. Keep it small enough to resolve the WECC Motor D Tstall
 # timer during the fault. TX_TDS_STEP is the separate ANDES internal TDS step.
 FINE_DT="${FINE_DT:-0.003}"
-COARSE_DT="${COARSE_DT:-0.03}"
+COARSE_DT="${COARSE_DT:-0.033}"
 TX_TDS_STEP="${TX_TDS_STEP:-0.03}"
 if [[ -z "${COARSE_START:-}" ]]; then
   COARSE_START=$(
@@ -259,7 +273,7 @@ if [[ "$FIDVR_ENABLE" == "1" && "$FIDVR_PROFILE" == "alerts" ]]; then
   FIDVR_REGULATOR_DELAY_S="${FIDVR_REGULATOR_DELAY_S:-2.0}"
   FIDVR_REGULATOR_TAP_DELAY_S="${FIDVR_REGULATOR_TAP_DELAY_S:-0.5}"
   if [[ "$COARSE_DT_WAS_SET" == "0" ]]; then
-    COARSE_DT="0.03"
+    COARSE_DT="0.033"
   fi
   if [[ "$TX_POSTFAULT_LINES_WAS_SET" == "0" ]]; then
     TX_POSTFAULT_LINES=""
@@ -315,7 +329,7 @@ if [[ "$FIDVR_ENABLE" == "1" && ( "$FIDVR_PROFILE" == "second_half" || "$FIDVR_P
     FINE_DT="0.005"
   fi
   if [[ "$COARSE_DT_WAS_SET" == "0" ]]; then
-    COARSE_DT="0.02"
+    COARSE_DT="0.005"
   fi
   if [[ "$COARSE_START_WAS_SET" == "0" ]]; then
     COARSE_START="1.580"
@@ -410,6 +424,12 @@ fi
 HELICS_BROKER_URL="${HELICS_BROKER_URL:-tcp://127.0.0.1:${PORT}}"
 
 PYTHON=/home/teng/miniforge3/envs/cosim/bin/python
+BROKER_LOG="$RUN_OUTPUT_DIR/broker.log"
+TRANSMISSION_LOG="$RUN_OUTPUT_DIR/transmission.log"
+
+feeder_log_path() {
+  printf "%s/feeder_%s.log" "$RUN_OUTPUT_DIR" "$1"
+}
 
 cleanup() {
   [[ -n "${MONITOR_PID:-}" ]] && kill "$MONITOR_PID" 2>/dev/null || true
@@ -524,8 +544,8 @@ print_progress_once() {
     tx_status="done"
   fi
 
-  tx_time=$(extract_tx_time "transmission.log")
-  feeder_time=$(extract_feeder_time "feeder_1.log")
+  tx_time=$(extract_tx_time "$TRANSMISSION_LOG")
+  feeder_time=$(extract_feeder_time "$(feeder_log_path 1)")
   feeder_alive=$(count_alive_feeders)
 
   printf '[progress %s] elapsed=%s tx=%s %s feeder1=%s feeders_alive=%s/%s\n' \
@@ -556,7 +576,7 @@ if ss -lntH "sport = :$PORT" | grep -q .; then
 fi
 
 BROKER_FEDERATES="$BROKER_FEDERATES" BROKER_PORT="$PORT" \
-  "$PYTHON" -u broker.py > broker.log 2>&1 &
+  "$PYTHON" -u broker.py > "$BROKER_LOG" 2>&1 &
 BROKER_PID=$!
 
 # Wait for broker port
@@ -567,7 +587,7 @@ for i in {1..50}; do
   sleep 0.1
 done
 if ! pid_is_alive "$BROKER_PID"; then
-  echo "Broker process exited before listening on $PORT. See broker.log." >&2
+  echo "Broker process exited before listening on $PORT. See $BROKER_LOG." >&2
   exit 1
 fi
 ss -lntH "sport = :$PORT" | grep -q . || { echo "Broker not listening on $PORT"; exit 1; } # Verify broker is listening
@@ -586,20 +606,27 @@ COSIM_BASE_MVA="$COSIM_BASE_MVA" \
 FEEDER_COUNT="$FEEDER_COUNT" \
 TX_ENABLE_DISTURBANCE="$TX_ENABLE_DISTURBANCE" \
 TX_KEEP_BUILTIN_EVENTS="$TX_KEEP_BUILTIN_EVENTS" \
+TX_EVENT_KIND="$TX_EVENT_KIND" \
 TX_FAULT_BUS="${TX_FAULT_BUS:-$TX_INTERFACE_BUS}" \
 TX_FAULT_TIME="$TX_FAULT_TIME" \
 TX_FAULT_DURATION="$TX_FAULT_DURATION" \
 TX_FAULT_RF="$TX_FAULT_RF" \
 TX_FAULT_XF="$TX_FAULT_XF" \
 TX_TDS_STEP="$TX_TDS_STEP" \
+TX_LINE_TRIP_LINES="$TX_LINE_TRIP_LINES" \
+TX_LINE_TRIP_LINE="$TX_LINE_TRIP_LINE" \
+TX_LINE_TRIP_TIME="$TX_LINE_TRIP_TIME" \
+TX_LINE_TRIP_DURATION="$TX_LINE_TRIP_DURATION" \
 TX_POSTFAULT_LINES="$TX_POSTFAULT_LINES" \
 TX_POSTFAULT_LINE="$TX_POSTFAULT_LINE" \
 TX_POSTFAULT_TRIP_DELAY="$TX_POSTFAULT_TRIP_DELAY" \
-  "$PYTHON" -u Transmission.py > transmission.log 2>&1 & # Start transmission simulator
+COSIM_OUTPUT_DIR="$COSIM_OUTPUT_DIR" \
+  "$PYTHON" -u Transmission.py > "$TRANSMISSION_LOG" 2>&1 & # Start transmission simulator
 TRANS_PID=$! # Store transmission PID
 
 # Start feeders
 for i in $(seq 1 "$FEEDER_COUNT"); do
+  FEEDER_LOG="$(feeder_log_path "$i")"
   SIM_TARGET_TIME="$TARGET_TIME" \
     SIM_FINE_DT="$FINE_DT" \
     SIM_COARSE_DT="$COARSE_DT" \
@@ -639,7 +666,8 @@ for i in $(seq 1 "$FEEDER_COUNT"); do
     FIDVR_PREFAULT_MIN_VOLTAGE_PU="$FIDVR_PREFAULT_MIN_VOLTAGE_PU" \
     FIDVR_TRIGGER_TIME="$FIDVR_TRIGGER_TIME" \
     FIDVR_FAULT_DURATION="$FIDVR_FAULT_DURATION" \
-    "$PYTHON" -u Distribution.py $i > feeder_${i}.log 2>&1 &
+    COSIM_OUTPUT_DIR="$COSIM_OUTPUT_DIR" \
+    "$PYTHON" -u Distribution.py "$i" > "$FEEDER_LOG" 2>&1 &
   FEED_PIDS+=("$!")
 done # Start distribution feeders
 
@@ -651,7 +679,7 @@ for i in $(seq 1 "$FEEDER_COUNT"); do
   pid="${FEED_PIDS[$((i - 1))]}"
   if ! pid_is_alive "$pid"; then
     STARTUP_EXIT=1
-    echo "Feeder $i exited during startup. See feeder_${i}.log." >&2
+    echo "Feeder $i exited during startup. See $(feeder_log_path "$i")." >&2
   fi
 done
 if [[ "$STARTUP_EXIT" != "0" ]]; then
@@ -663,6 +691,7 @@ echo "  broker pid: $BROKER_PID"
 echo "  transmission pid: $TRANS_PID"
 echo "  feeder count: $FEEDER_COUNT"
 echo "  FIDVR profile: $FIDVR_PROFILE"
+echo "  output directory: $RUN_OUTPUT_DIR"
 echo "  target simulation time: ${TARGET_TIME}s"
 if [[ "$FINE_DT" == "$COARSE_DT" ]]; then
   echo "  co-simulation step schedule: constant ${FINE_DT}s"
@@ -703,17 +732,24 @@ echo "  disturbance enabled: $TX_ENABLE_DISTURBANCE"
 echo "  keep workbook events: $TX_KEEP_BUILTIN_EVENTS"
 echo "  FIDVR enabled: $FIDVR_ENABLE"
 if [[ "$TX_ENABLE_DISTURBANCE" == "1" ]]; then
-  echo "  fault bus: ${TX_FAULT_BUS:-$TX_INTERFACE_BUS}"
-  echo "  fault time: $TX_FAULT_TIME"
-  echo "  fault duration: $TX_FAULT_DURATION"
-  echo "  fault rf/xf: $TX_FAULT_RF / $TX_FAULT_XF"
-  echo "  post-fault lines: ${TX_POSTFAULT_LINES:-${TX_POSTFAULT_LINE:-none}}"
+  echo "  transmission event kind: $TX_EVENT_KIND"
+  if [[ "$TX_EVENT_KIND" == "line_trip_reclose" || "$TX_EVENT_KIND" == "line_trip" ]]; then
+    echo "  line trip lines: ${TX_LINE_TRIP_LINES:-${TX_LINE_TRIP_LINE:-none}}"
+    echo "  line trip time: $TX_LINE_TRIP_TIME"
+    echo "  line trip duration: $TX_LINE_TRIP_DURATION"
+  else
+    echo "  fault bus: ${TX_FAULT_BUS:-$TX_INTERFACE_BUS}"
+    echo "  fault time: $TX_FAULT_TIME"
+    echo "  fault duration: $TX_FAULT_DURATION"
+    echo "  fault rf/xf: $TX_FAULT_RF / $TX_FAULT_XF"
+    echo "  post-fault lines: ${TX_POSTFAULT_LINES:-${TX_POSTFAULT_LINE:-none}}"
+  fi
 fi
 echo "  expected federates: $BROKER_FEDERATES"
 echo "  logs:"
-echo "    broker.log"
-echo "    transmission.log"
-echo "    feeder_*.log"
+echo "    $BROKER_LOG"
+echo "    $TRANSMISSION_LOG"
+echo "    $RUN_OUTPUT_DIR/feeder_*.log"
 echo "  progress heartbeat: every ${PROGRESS_INTERVAL}s"
 
 progress_monitor &

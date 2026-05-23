@@ -10,6 +10,7 @@ import helics as h
 import andes
 import math
 import os
+import re
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -127,6 +128,13 @@ def get_nonnegative_env_float(name: str, default: float) -> float:
     return parsed
 
 
+def get_unit_interval_env_float(name: str, default: float) -> float:
+    value = get_positive_env_float(name, default)
+    if value > 1.0:
+        raise ValueError(f"Invalid {name}='{value}'. Expected a value in (0, 1].")
+    return value
+
+
 def get_env_bool(name: str, default: bool) -> bool:
     value = os.environ.get(name)
     if value is None:
@@ -179,6 +187,23 @@ def get_transmission_case_path(script_dir: Path) -> Path:
     return case_path.resolve()
 
 
+def get_output_dir(script_dir: Path) -> Path:
+    output_value = (
+        os.environ.get("COSIM_OUTPUT_DIR")
+        or os.environ.get("RUN_OUTPUT_DIR")
+        or os.environ.get("FIDVR_OUTPUT_DIR")
+    )
+    if not output_value:
+        return script_dir
+
+    output_dir = Path(output_value)
+    if not output_dir.is_absolute():
+        output_dir = script_dir / output_dir
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
 def get_interface_bus() -> int:
     return get_positive_env_int("TX_INTERFACE_BUS", 14)
 
@@ -211,11 +236,31 @@ def parse_postfault_lines() -> list[str]:
     return []
 
 
+def parse_line_trip_lines() -> list[str]:
+    for env_name in ("TX_LINE_TRIP_LINES", "TX_LINE_TRIP_LINE"):
+        raw = os.environ.get(env_name)
+        if raw is None:
+            continue
+        line_indices = [item.strip() for item in raw.split(",") if item.strip()]
+        if line_indices:
+            return line_indices
+    return parse_postfault_lines()
+
+
 def get_disturbance_mode() -> str:
-    raw_value = os.environ.get("TX_DISTURBANCE_MODE", "fault").strip().lower()
+    raw_value = (
+        os.environ.get("TX_EVENT_KIND")
+        or os.environ.get("TX_DISTURBANCE_KIND")
+        or os.environ.get("TX_DISTURBANCE_MODE")
+        or "fault"
+    ).strip().lower()
     aliases = {
+        "bus_fault": "fault",
         "fault": "fault",
+        "three_phase_fault": "fault",
+        "three_phase_to_ground": "fault",
         "line": "line_trip_reclose",
+        "line_trip": "line_trip_reclose",
         "toggle": "line_trip_reclose",
         "trip_reclose": "line_trip_reclose",
         "line_trip_reclose": "line_trip_reclose",
@@ -231,24 +276,27 @@ def get_disturbance_mode() -> str:
 def get_disturbance_config():
     """Configure the transmission disturbance workflow.
 
-    The default path is a bus fault with optional post-fault line
-    opening. A compatibility path is also kept for the original benchmark that
-    trips a line at `TX_DISTURBANCE_TIME` and recloses it after
-    `TX_DISTURBANCE_DURATION`.
+    The default path is a bus fault with optional post-fault line opening. The
+    line-trip path uses TX_LINE_TRIP_* for a temporary trip/reclose.
     """
     enabled = get_env_bool("TX_ENABLE_DISTURBANCE", True)
     mode = get_disturbance_mode()
 
     if mode == "line_trip_reclose":
-        line_indices = parse_postfault_lines()
+        line_indices = parse_line_trip_lines()
         if enabled and not line_indices:
             raise ValueError(
-                "TX_DISTURBANCE_MODE=line_trip_reclose requires "
-                "TX_DISTURBANCE_LINE, TX_DISTURBANCE_LINES, TX_POSTFAULT_LINE, "
-                "or TX_POSTFAULT_LINES."
+                "TX_EVENT_KIND=line_trip_reclose requires TX_LINE_TRIP_LINE "
+                "or TX_LINE_TRIP_LINES."
             )
-        line_trip_time = get_positive_env_float("TX_DISTURBANCE_TIME", 1.0)
-        line_duration = get_positive_env_float("TX_DISTURBANCE_DURATION", 0.2)
+        line_trip_time = get_positive_env_float(
+            "TX_LINE_TRIP_TIME",
+            get_positive_env_float("TX_DISTURBANCE_TIME", 1.0),
+        )
+        line_duration = get_positive_env_float(
+            "TX_LINE_TRIP_DURATION",
+            get_positive_env_float("TX_DISTURBANCE_DURATION", 0.2),
+        )
         line_reclose_time = line_trip_time + line_duration
         return {
             "enabled": enabled,
@@ -576,6 +624,10 @@ def get_genrou_diagnostics(ss):
         diag["omega_min_bus"] = int(gen_buses[omega_min_pos])
         diag["omega_max_idx"] = str(gen_ids[omega_max_pos])
         diag["omega_max_bus"] = int(gen_buses[omega_max_pos])
+        for gen_idx, gen_bus, gen_omega in zip(gen_ids, gen_buses, omega):
+            gen_token = re.sub(r"[^A-Za-z0-9]+", "_", str(gen_idx)).strip("_")
+            diag[f"omega_{gen_token}_pu"] = float(gen_omega)
+            diag[f"omega_{gen_token}_bus"] = int(gen_bus)
 
     if vf.size:
         vf_min_pos = int(np.argmin(vf))
@@ -623,20 +675,26 @@ def make_timeseries_row(
 
 # Write the collected timeseries data to a CSV file for analysis.
 def write_transmission_timeseries(csv_path, rows):
+    columns = list(TRANSMISSION_CSV_COLUMNS)
+    for row in rows:
+        for column in row:
+            if column not in columns:
+                columns.append(column)
     if rows:
-        df = pd.DataFrame(rows, columns=TRANSMISSION_CSV_COLUMNS)
+        df = pd.DataFrame(rows, columns=columns)
     else:
-        df = pd.DataFrame(columns=TRANSMISSION_CSV_COLUMNS)
+        df = pd.DataFrame(columns=columns)
     df.to_csv(csv_path, index=False)
     print(f"Transmission: saved timeseries CSV to {csv_path}")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CASE_XLSX = get_transmission_case_path(SCRIPT_DIR)
-TRANSMISSION_CSV_PATH = SCRIPT_DIR / "transmission_timeseries.csv"
+OUTPUT_DIR = get_output_dir(SCRIPT_DIR)
+TRANSMISSION_CSV_PATH = OUTPUT_DIR / "transmission_timeseries.csv"
 BROKER_URL = get_broker_url()
 VOLTAGE_TOPIC = get_voltage_topic()
 INTERFACE_BUS = get_interface_bus()
-TRANSMISSION_ALERT_CSV_PATH = SCRIPT_DIR / f"bus{INTERFACE_BUS}_fidvr_alerts.csv"
+TRANSMISSION_ALERT_CSV_PATH = OUTPUT_DIR / f"bus{INTERFACE_BUS}_fidvr_alerts.csv"
 FEEDER_COUNT = get_feeder_count()
 COSIM_BASE_MVA = get_cosim_base_mva()
 HELICS_UNINTERRUPTIBLE = get_env_bool("HELICS_UNINTERRUPTIBLE", False)
@@ -681,11 +739,16 @@ print(
     f"case={CASE_XLSX} interface_bus={INTERFACE_BUS} feeders={FEEDER_COUNT} "
     f"interface_base={COSIM_BASE_MVA:.3f} MVA broker={BROKER_URL} "
     f"voltage_topic={VOLTAGE_TOPIC} "
-    f"uninterruptible={HELICS_UNINTERRUPTIBLE}"
+    f"uninterruptible={HELICS_UNINTERRUPTIBLE} output_dir={OUTPUT_DIR}"
 )
 
 # 2. Load ANDES
-ss = andes.load(str(CASE_XLSX), setup=False, default_config=True)
+ss = andes.load(
+    str(CASE_XLSX),
+    setup=False,
+    default_config=True,
+    output_path=str(OUTPUT_DIR),
+)
 tx_system_base_mva = float(ss.config.mva)
 power_scale = COSIM_BASE_MVA / tx_system_base_mva
 if not KEEP_BUILTIN_EVENTS:
@@ -977,8 +1040,9 @@ target_time = get_target_time()
 print(f"Transmission: target simulation time = {target_time:.3f} s")
 
 iter_count = 0
-tolV = 1e-5
-alpha = 1
+tolV = get_positive_env_float("TX_VOLTAGE_TOL", 1e-5)
+alpha = get_unit_interval_env_float("TX_VOLTAGE_RELAXATION", 1.0)
+force_convergence_iteration = get_env_bool("TX_COSIM_FORCE_ITERATION", True)
 max_outer = 20
 tx_failed = False
 tx_failure_message = None
@@ -1043,6 +1107,8 @@ try:
 
             if abs(interface_voltage_pub - Vprev) < tolV:
                 iter_req = h.HELICS_ITERATION_REQUEST_NO_ITERATION
+            elif force_convergence_iteration:
+                iter_req = h.HELICS_ITERATION_REQUEST_FORCE_ITERATION
             else:
                 iter_req = h.HELICS_ITERATION_REQUEST_ITERATE_IF_NEEDED
 

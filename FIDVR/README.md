@@ -46,7 +46,7 @@ FNET/GridEye-style indices:
 
 - `Alert.1`: voltage dip `>= 0.20 pu` within `3` cycles
 - `Alert.2`: undervoltage duration `>= 5 s`
-- `Alert.3`: overvoltage duration `>= 1 s` within `120 s` after `Alert.2`
+- `Alert.3`: overvoltage duration `>= 1 s` within `30 s` after `Alert.2`
 
 The alert CSVs are written beside the logs as:
 
@@ -150,6 +150,102 @@ FIDVR_ENABLE=1 FIDVR_PROFILE=second_half ./run.sh
 python3 plot_from_logs.py --log transmission.log
 python3 plot_distribution_from_logs.py --log feeder_1.log
 ```
+
+To keep a single run from overwriting the previous artifacts, send it to a run
+folder:
+
+```bash
+RUN_OUTPUT_DIR=runs/share_0p50 FIDVR_ENABLE=1 FIDVR_PROFILE=weak_bus14 \
+FIDVR_MOTOR_SHARE=0.50 ./run.sh
+
+python3 plot_from_logs.py --log runs/share_0p50/transmission.log \
+  --out runs/share_0p50/plots
+python3 plot_distribution_from_logs.py --log runs/share_0p50/feeder_1.log \
+  --out runs/share_0p50/plots
+python3 plot_feeder_substation_voltages.py --run-dir runs/share_0p50 \
+  --out runs/share_0p50/plots
+```
+
+For a Motor D composition sweep from `0` to `1`, use the sweep runner. Each
+case gets its own output folder and HELICS broker port, so the cases can run in
+parallel and then be plotted together:
+
+```bash
+./run_motor_share_sweep.py --step 0.1 --profile weak_bus14
+```
+
+The sweep writes per-case artifacts under `motor_share_sweep_runs/share_*` and
+comparison outputs at the sweep root:
+
+- `motor_share_transmission_voltage.png`
+- `motor_share_frequency_response.png`
+- `motor_share_interface_frequency_deviation.png`
+- `motor_share_bus<interface_bus>_frequency_deviation.png`
+- `motor_share_distribution_voltage.png`
+- `motor_share_total_active_power.png`
+- `motor_share_total_reactive_power.png`
+- `motor_share_sweep_summary.csv`
+
+Each successful case also gets `plots/feeder_substation_voltages.png`, which
+overlays the source/substation voltage from every `feeder_*.log` in that run.
+
+Use `--max-parallel N` if you want to control how many co-simulations run at the
+same time, or `--shares 0,0.25,0.5,0.75,1` for an explicit list. Parallel
+HELICS/ZMQ brokers are spaced by `--port-stride` ports; the default stride is
+`10` to avoid broker socket collisions.
+
+If an old HELICS broker is still holding a port, add `--auto-base-port` to move
+the whole sweep to the next free port block.
+
+To compare several transmission-side bus faults while observing the same
+distribution feeder/substation response, use the fault sweep runner:
+
+```bash
+./run_transmission_fault_sweep.py --fault-buses 14,13,9 \
+  --motor-share 1.0 --profile weak_bus14 --auto-base-port
+```
+
+This keeps the distribution setup and motor share fixed while changing
+`TX_FAULT_BUS` for each case. Use `--fault-time`, `--fault-duration`,
+`--fault-rf`, and `--fault-xf` to change the generated bus-fault settings.
+Temporary line trip/reclose cases can be mixed into the same sweep:
+
+```bash
+./run_transmission_fault_sweep.py --fault-buses 14,13 \
+  --line-trips Line_13,Line_16 --motor-share 1.0 --auto-base-port
+```
+
+For named cases, pass a CSV with `kind` set to either `bus_fault` or
+`line_trip`. Bus faults use `bus,start_time,clear_time,xf,rf`; line trips use
+`line_idx,start_time,clear_time`:
+
+```bash
+./run_transmission_fault_sweep.py --scenarios cosim_fault_scenarios.csv \
+  --motor-share 1.0 --auto-base-port
+```
+
+The included `cosim_fault_scenarios.csv` intentionally mixes interface-bus,
+near-interface load-bus, remote load-bus, generator-bus, and transmission
+line-trip cases. In this positive-sequence ANDES setup, `bus_fault` uses the
+ANDES balanced three-phase-to-ground `Fault` model. Single-line-to-ground or
+line-to-line unbalanced faults are not modeled directly by this runner; a
+single transmission line outage is represented by `line_trip`.
+
+The fault sweep writes per-case artifacts under
+`transmission_fault_sweep_runs/<scenario>` and comparison outputs at the sweep
+root:
+
+- `fault_sweep_feeder_substation_voltage.png`
+- `fault_sweep_distribution_voltage.png`
+- `fault_sweep_transmission_voltage.png`
+- `transmission_fault_sweep_summary.csv`
+
+Each successful fault case also writes
+`feeder_<n>_all_bus_voltages.csv` and
+`plots/feeder_<n>_ieee13_node_voltages.png`, which compare the IEEE 13-node
+OpenDSS node-average voltages for that same transmission disturbance. Set
+`DIST_ALL_BUS_VOLTAGE_BUSES=all` before running if you want auxiliary OpenDSS
+buses such as source/regulator buses included in the CSV.
 
 `FIDVR_MOTOR_SHARE` is the Motor D composition fraction. To increase the FIDVR
 forcing before tuning internal Motor D parameters, increase this fraction or the
