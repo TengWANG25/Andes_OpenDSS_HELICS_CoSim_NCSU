@@ -18,5 +18,5 @@ venv/
 .vscode/
 .idea/
 *:Zone.Identifier
-.agents/
-.skills/
+*.agents/
+*.skills/
