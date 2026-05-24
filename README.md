@@ -4,7 +4,9 @@ Transmission-distribution co-simulation with ANDES, OpenDSS, and HELICS.
 
 Preliminary: The OpenDSS, OpenDSS python interface, ANDES, HELICS should be installed with LINUX environment. The necessary python packages are imported and should be installed as well.
 
-To run the co-simulation, use `./run.sh` in terminal.
+Please nevigate to each session 'Dynamic_Cosim', 'FIDVR', ANDES_118_power_flow_test' to explore differernt scenarios. 
+
+Once down, to run the co-simulation, use `./run.sh` in terminal, please feel free to explore the options of using docker as you might encouter some package issues.
 
 
 The default `run.sh` configuration is a small case baseline:
