@@ -7,21 +7,21 @@ transmission distribution interface bus.
 
 ## Requirements
 
-Use a Linux environment with Python, HELICS, ANDES, OpenDSSDirect.py, pandas,
-and NumPy installed. The scripts currently default to:
+Use Linux or WSL with Bash and `ss` (provided by `iproute2`), plus Python,
+HELICS, ANDES, OpenDSSDirect.py, pandas, NumPy, matplotlib, and openpyxl.
+See the [repository quick start](../README.md#quick-start) for an environment
+setup example.
 
-```bash
-/home/teng/miniforge3/envs/cosim/bin/python
-```
-
-Override that path with `PYTHON=/path/to/python ./run.sh` if needed.
+The launcher uses `python3` from your active environment. To select a specific
+interpreter, use `PYTHON=/absolute/path/to/python bash ./run.sh`.
 
 ## Run
 
-From this directory:
+From the repository root:
 
 ```bash
-./run.sh
+cd Dynamic_Cosim
+bash ./run.sh
 ```
 
 `run.sh` starts the HELICS broker, transmission federate, and feeder federate,
@@ -60,7 +60,7 @@ The co-simulation step defaults are:
 | `FINE_DT` | `0.03` | HELICS/OpenDSS co-simulation step before `COARSE_START` |
 | `COARSE_DT` | `0.03` | HELICS/OpenDSS co-simulation step after `COARSE_START` |
 | `COARSE_START` | `1.60` | Time to switch to `COARSE_DT` |
-| `TX_TDS_STEP` | `0.033` | ANDES internal TDS step |
+| `TX_TDS_STEP` | `0.001` | ANDES internal TDS step (default is the smaller of `FINE_DT / 5` and `0.001`) |
 
 Examples:
 
@@ -107,14 +107,15 @@ combined with `feeder_*.log` files to reconstruct the interface time series.
 
 ## Containers
 
-Build and run with Docker:
+Build from the **repository root**, rather than this scenario folder, so the
+image includes the shared `8500Node/` feeder data:
 
 ```bash
-docker build -t andes-opendss-helics-cosim .
+docker build -f Dynamic_Cosim/Dockerfile -t andes-opendss-helics-cosim .
 docker run --rm -it andes-opendss-helics-cosim
 ```
 
-Mount the working tree for development:
+Mount the entire repository root to keep logs and plots on your computer:
 
 ```bash
 docker run --rm -it \
@@ -122,10 +123,10 @@ docker run --rm -it \
   andes-opendss-helics-cosim
 ```
 
-Build and run with Apptainer:
+Build and run with Apptainer from the **repository root**:
 
 ```bash
-apptainer build andes-opendss-helics-cosim.sif Apptainer.def
+apptainer build andes-opendss-helics-cosim.sif Dynamic_Cosim/Apptainer.def
 apptainer run --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif
 ```
 
@@ -133,6 +134,6 @@ Open an Apptainer shell:
 
 ```bash
 apptainer shell --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif
-cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU
-./run.sh
+cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/Dynamic_Cosim
+bash ./run.sh
 ```

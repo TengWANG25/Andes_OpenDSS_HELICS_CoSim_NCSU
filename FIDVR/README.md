@@ -1,20 +1,41 @@
-Andes-OpenDSS-HELICS CoSimulation -- NCSU
+# ANDES + OpenDSS + HELICS FIDVR Study
 
 Transmission-distribution co-simulation with ANDES, OpenDSS, and HELICS.
 
-Preliminary: The OpenDSS, OpenDSS python interface, ANDES, HELICS should be installed with LINUX environment. The necessary python packages are imported and should be installed as well.
+## Requirements and first run
 
-To run the co-simulation, use `./run.sh` in terminal.
+Use Linux or WSL with Bash and `ss` (provided by `iproute2`), plus Python,
+HELICS, ANDES, OpenDSSDirect.py, pandas, NumPy, matplotlib, and openpyxl.
+See the [repository quick start](../README.md#quick-start) for environment setup.
+The launcher uses `python3` from your active environment and accepts
+`PYTHON=/absolute/path/to/python` to select another interpreter.
+
+From the repository root, start with a short baseline that writes new outputs
+under `FIDVR/runs/quickstart/`:
+
+```bash
+cd FIDVR
+RUN_OUTPUT_DIR=runs/quickstart TARGET_TIME=2 FIDVR_ENABLE=0 \
+TX_ENABLE_DISTURBANCE=0 bash ./run.sh
+python3 plot_from_logs.py --log runs/quickstart/transmission.log
+python3 plot_distribution_from_logs.py --log runs/quickstart/feeder_1.log
+```
+
+The IEEE 13-node feeder input is shared at `../13Bus/IEEE13Nodeckt.dss`;
+`Distribution.py` resolves the default path against the scenario folder and
+then its parent. Keep the full repository layout when copying this scenario.
+The remaining examples below write to this scenario folder unless
+`RUN_OUTPUT_DIR` is set.
 
 
 The default `run.sh` configuration is a small case baseline:
 
 - Transmission case: `ieee14_fault.xlsx`
-- Distribution case: `13Bus/IEEE13Nodeckt.dss`
+- Distribution case: `../13Bus/IEEE13Nodeckt.dss` (resolved automatically)
 - Transmission interface bus: `2`
 - Distribution monitor bus: `650`
 - Shared co-simulation base: `100 MVA`
-- Defaulted Disturbance: disabled by default for the baseline handshake run
+- Disturbance: disabled by default for the baseline handshake run
 
 To plot the transmission side bus voltage after a run:
 
@@ -44,8 +65,8 @@ DIST_VOLTAGE_BUS=650
 COSIM_BASE_MVA=100.0
 TX_ENABLE_DISTURBANCE=0
 TX_KEEP_BUILTIN_EVENTS=0
-SIM_FINE_DT=0.005
-SIM_COARSE_DT=0.03
+FINE_DT=0.003
+COARSE_DT=0.033
 TX_TDS_STEP=0.03
 ```
 
@@ -63,8 +84,8 @@ TX_FAULT_TIME=1.0
 TX_FAULT_DURATION=0.08
 TX_FAULT_RF=0.0
 TX_FAULT_XF=0.3
-SIM_FINE_DT=0.005
-SIM_COARSE_DT=0.02
+FINE_DT=0.003
+COARSE_DT=0.033
 TX_TDS_STEP=0.03
 ```
 When `FIDVR_ENABLE=1`, the feeder uses one FIDVR motor path: the WECC/LD1PAC
@@ -154,10 +175,11 @@ These parameters mean:
 
 A containerized environment is provided via `Dockerfile` so the project can run with all required tools (HELICS broker/apps, Python, ANDES, OpenDSSDirect, pandas).
 
-Build image:
+Build from the **repository root**, rather than this scenario folder, so shared
+OpenDSS case folders are included:
 
 ```bash
-docker build -t andes-opendss-helics-cosim .
+docker build -f FIDVR/Dockerfile -t andes-opendss-helics-cosim .
 ```
 
 Run co-simulation:
@@ -166,7 +188,7 @@ Run co-simulation:
 docker run --rm -it andes-opendss-helics-cosim
 ```
 
-To mount your local working tree for iterative development:
+To keep logs and plots on your computer, mount the entire repository root:
 
 ```bash
 docker run --rm -it \
@@ -177,10 +199,10 @@ docker run --rm -it \
 
 ## Apptainer setup
 
-Build the image:
+Build the image from the **repository root**:
 
 ```bash
-apptainer build andes-opendss-helics-cosim.sif Apptainer.def
+apptainer build andes-opendss-helics-cosim.sif FIDVR/Apptainer.def
 ```
 
 Run the co-simulation:
@@ -191,7 +213,7 @@ apptainer run --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-ope
 Run with an explicit command:
 
 ```bash
-apptainer exec --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+apptainer exec --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/FIDVR/run.sh
 ```
 
 Open an interactive shell:
@@ -203,8 +225,9 @@ apptainer shell --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-o
 Inside shell:
 
 ```bash
-cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU
-./run.sh
+cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/FIDVR
+bash ./run.sh
 ```
 
-> Note: `apptainer build` typically needs root (`sudo`)
+> Apptainer build permissions depend on the host configuration; use the method
+> supported by your cluster or local installation.

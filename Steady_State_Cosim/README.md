@@ -1,10 +1,24 @@
-Andes_OpenDSS_HELICS_CoSim_NCSU
+# ANDES + OpenDSS + HELICS Steady-State Co-Simulation
 
 IEEE118-8500 systems co-simulation with Andes and OpenDSS
 
-Preliminary: The OpenDSS, OpenDSS python interface, ANDES, HELICS should be installed with LINUX environment. The necessary python packages are imported and should be installed as well.
+Use Linux or WSL with Bash and `ss` (provided by `iproute2`), plus Python,
+HELICS, ANDES, OpenDSSDirect.py, pandas, NumPy, matplotlib, and openpyxl.
+See the [repository quick start](../README.md#quick-start) for environment setup.
+The launcher uses `python3` from your active environment; override it with
+`PYTHON=/absolute/path/to/python bash ./run.sh` if needed.
 
-To run the co-simulation, use `./run.sh` in ternimal.
+From the repository root:
+
+```bash
+cd Steady_State_Cosim
+bash ./run.sh
+```
+
+This launcher starts ten feeder federates on broker port `23406`.
+The shared feeder data is in `../8500Node/`. `Distribution.py` checks its
+local folder, then the repository root, or accepts an explicit
+`DIST_MASTER_DSS=/absolute/path/to/Master.dss`.
 
 To plot the transmission-side bus voltage after a run:
 
@@ -28,10 +42,11 @@ DIST_VOLTAGE_BUS=_hvmv_sub_lsb ./run.sh
 
 A containerized environment is provided via `Dockerfile` so the project can run with all required tools (HELICS broker/apps, Python, ANDES, OpenDSSDirect, pandas).
 
-Build image:
+Build from the **repository root**, rather than this scenario folder, so shared
+OpenDSS case folders are included:
 
 ```bash
-docker build -t andes-opendss-helics-cosim .
+docker build -f Steady_State_Cosim/Dockerfile -t andes-opendss-helics-cosim .
 ```
 
 Run co-simulation:
@@ -40,7 +55,7 @@ Run co-simulation:
 docker run --rm -it andes-opendss-helics-cosim
 ```
 
-To mount your local working tree for iterative development:
+To keep logs and plots on your computer, mount the entire repository root:
 
 ```bash
 docker run --rm -it \
@@ -51,10 +66,10 @@ docker run --rm -it \
 
 ## Apptainer setup
 
-Build the image:
+Build the image from the **repository root**:
 
 ```bash
-apptainer build andes-opendss-helics-cosim.sif Apptainer.def
+apptainer build andes-opendss-helics-cosim.sif Steady_State_Cosim/Apptainer.def
 ```
 
 Run the co-simulation:
@@ -65,7 +80,7 @@ apptainer run --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-ope
 Run with an explicit command:
 
 ```bash
-apptainer exec --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+apptainer exec --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-opendss-helics-cosim.sif bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/Steady_State_Cosim/run.sh
 ```
 
 Open an interactive shell:
@@ -77,8 +92,9 @@ apptainer shell --bind "$PWD":/workspace/Andes_OpenDSS_HELICS_CoSim_NCSU andes-o
 Inside shell:
 
 ```bash
-cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU
-./run.sh
+cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/Steady_State_Cosim
+bash ./run.sh
 ```
 
-> Note: `apptainer build` typically needs root (`sudo`)
+> Apptainer build permissions depend on the host configuration; use the method
+> supported by your cluster or local installation.

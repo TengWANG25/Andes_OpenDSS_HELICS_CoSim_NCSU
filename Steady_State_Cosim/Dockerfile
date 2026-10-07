@@ -22,13 +22,18 @@ RUN python -m pip install --no-cache-dir \
       helics-apps \
       andes \
       opendssdirect.py \
-      pandas
+      pandas \
+      numpy \
+      matplotlib \
+      openpyxl
 
 WORKDIR /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU
 
-# Copy the full repository into the image.
+# Build from the repository root with -f Steady_State_Cosim/Dockerfile so shared
+# OpenDSS case folders are available alongside the scenario scripts.
 COPY . .
 
+WORKDIR /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/Steady_State_Cosim
 RUN chmod +x run.sh
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/_entrypoint.sh"]

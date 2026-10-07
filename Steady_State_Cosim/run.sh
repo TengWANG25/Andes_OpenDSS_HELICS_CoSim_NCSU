@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail # Strict error handling
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+PYTHON="${PYTHON:-python3}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  echo "Python interpreter not found: $PYTHON. Activate your environment or set PYTHON=/path/to/python." >&2
+  exit 1
+fi
+if ! command -v ss >/dev/null 2>&1; then
+  echo "The ss command is required. Install iproute2 in your Linux environment." >&2
+  exit 1
+fi
+
 PORT=23406 # Broker port
 
 cleanup() {
@@ -12,7 +25,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT # Trap signals for cleanup
 
 # Start broker
-python3 -u broker.py > broker.log 2>&1 & # Start HELICS broker
+"$PYTHON" -u broker.py > broker.log 2>&1 & # Start HELICS broker
 BROKER_PID=$!
 
 # Wait for broker port
@@ -23,13 +36,13 @@ done
 ss -lnt | grep -q ":$PORT" || { echo "Broker not listening on $PORT"; exit 1; } # Verify broker is listening
 
 # Start transmission
-python3 -u Transmission.py > transmission.log 2>&1 & # Start transmission simulator
+"$PYTHON" -u Transmission.py > transmission.log 2>&1 & # Start transmission simulator
 TRANS_PID=$! # Store transmission PID
 
 # Start feeders
 FEED_PIDS=""
 for i in $(seq 1 10); do
-  python3 -u Distribution.py $i > feeder_${i}.log 2>&1 &
+  "$PYTHON" -u Distribution.py $i > feeder_${i}.log 2>&1 &
   FEED_PIDS="$FEED_PIDS $!"
 done # Start distribution feeders
 

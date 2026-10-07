@@ -31,7 +31,15 @@ if (( FEEDER_COUNT > 0 )) && [[ ! -f "$DIST_MASTER_DSS" ]]; then
   exit 1
 fi
 
-PYTHON="${PYTHON:-/home/teng/miniforge3/envs/cosim/bin/python}"
+PYTHON="${PYTHON:-python3}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  echo "Python interpreter not found: $PYTHON. Activate your environment or set PYTHON=/path/to/python." >&2
+  exit 1
+fi
+if ! command -v ss >/dev/null 2>&1; then
+  echo "The ss command is required. Install iproute2 in your Linux environment." >&2
+  exit 1
+fi
 
 cleanup() {
   [[ -n "${MONITOR_PID:-}" ]] && kill "$MONITOR_PID" 2>/dev/null || true

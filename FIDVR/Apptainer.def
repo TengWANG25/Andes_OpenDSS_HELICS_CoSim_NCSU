@@ -6,6 +6,7 @@ From: mambaorg/micromamba:1.5.10
     Description "ANDES + OpenDSS + HELICS co-simulation runtime"
 
 %files
+    # Run apptainer build from the repository root to include shared case data.
     . /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU
 
 %post
@@ -25,9 +26,12 @@ From: mambaorg/micromamba:1.5.10
       helics-apps \
       andes \
       opendssdirect.py \
-      pandas
+      pandas \
+      numpy \
+      matplotlib \
+      openpyxl
 
-    chmod +x /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+    chmod +x /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/FIDVR/run.sh
 
 %environment
     export PATH=/opt/conda/bin:$PATH
@@ -35,7 +39,9 @@ From: mambaorg/micromamba:1.5.10
     export LANG=C.UTF-8
 
 %runscript
-    exec /usr/bin/tini -- bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+    cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/FIDVR
+    exec /usr/bin/tini -- bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/FIDVR/run.sh
 
 %startscript
-    exec /usr/bin/tini -- bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/run.sh
+    cd /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/FIDVR
+    exec /usr/bin/tini -- bash /workspace/Andes_OpenDSS_HELICS_CoSim_NCSU/FIDVR/run.sh

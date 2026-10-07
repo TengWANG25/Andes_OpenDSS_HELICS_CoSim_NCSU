@@ -74,7 +74,20 @@ print(f"Feeder {feeder_index}: Connected.")
 
 # 2. OpenDSS Setup
 SCRIPT_DIR = Path(__file__).resolve().parent # Get current script directory
-master_dss = (SCRIPT_DIR / "8500Node" / "Master.dss").resolve() # Path to Master DSS file
+case_path = Path(os.environ.get("DIST_MASTER_DSS", "8500Node/Master.dss"))
+if case_path.is_absolute():
+    master_dss = case_path.resolve()
+else:
+    # Shared feeder data lives at the repository root in the public checkout.
+    master_dss = next(
+        (base / case_path for base in (SCRIPT_DIR, SCRIPT_DIR.parent)
+         if (base / case_path).is_file()),
+        SCRIPT_DIR / case_path,
+    ).resolve()
+if not master_dss.is_file():
+    raise FileNotFoundError(
+        f"Distribution case not found: {master_dss}. Set DIST_MASTER_DSS to Master.dss."
+    )
 dss.Basic.ClearAll() # Clear previous DSS data
 dss.Text.Command(f'Compile "{master_dss}"') # Compile the DSS file
 dss.Text.Command("set controlmode=off")   # freeze controls (regulators/caps)
