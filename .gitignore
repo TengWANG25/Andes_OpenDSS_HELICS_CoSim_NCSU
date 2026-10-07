@@ -1,6 +1,7 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
 .venv/
 venv/
 
@@ -21,5 +22,5 @@ venv/
 .skills/
 skills/
 **/skills/
-*:Zone.Identifier
+*:Zone.Identifier*
 

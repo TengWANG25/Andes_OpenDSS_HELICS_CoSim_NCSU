@@ -423,7 +423,15 @@ else
 fi
 HELICS_BROKER_URL="${HELICS_BROKER_URL:-tcp://127.0.0.1:${PORT}}"
 
-PYTHON=/home/teng/miniforge3/envs/cosim/bin/python
+PYTHON="${PYTHON:-python3}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  echo "Python interpreter not found: $PYTHON. Activate your environment or set PYTHON=/path/to/python." >&2
+  exit 1
+fi
+if ! command -v ss >/dev/null 2>&1; then
+  echo "The ss command is required. Install iproute2 in your Linux environment." >&2
+  exit 1
+fi
 BROKER_LOG="$RUN_OUTPUT_DIR/broker.log"
 TRANSMISSION_LOG="$RUN_OUTPUT_DIR/transmission.log"
 

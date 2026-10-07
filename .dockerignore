@@ -1,0 +1,16 @@
+# Keep local environments, caches, and Git metadata out of container images.
+.git
+.venv
+**/.venv
+venv
+**/venv
+**/__pycache__
+**/.pytest_cache
+**/*.py[cod]
+**/*:Zone.Identifier*
+.vscode
+.idea
+.env
+**/*.sif
+
+# Model data and saved result figures remain available in the build context.
