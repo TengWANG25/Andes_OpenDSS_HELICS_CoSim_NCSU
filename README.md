@@ -50,7 +50,7 @@ clearing, alongside the stalled-motor and thermal-trip intervals shown below the
 curve. Settings are recorded in the saved [transmission log](FIDVR/transmission.log)
 and [feeder log](FIDVR/feeder_1.log).
 
-This figure illustrates a simulation case. The [case-study notes](FIDVR/case_study_observations_conclusions.md)
+The [case-study notes](FIDVR/case_study_observations_conclusions.md)
 describe further sensitivity studies and their modeling limits. The quick start
 below runs a separate short baseline with disturbances and Motor D disabled.
 

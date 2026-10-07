@@ -79,8 +79,7 @@ PYTHON=python RUN_OUTPUT_DIR=runs/weak_bus14_demo TARGET_TIME=10 \
 ```
 
 This enables the Motor D model and the transmission disturbance at the bus 14
-interface. It is a study preset; its outputs depend on the selected parameters.
-Use a distinct `RUN_OUTPUT_DIR` for each comparison.
+interface. Use a distinct `RUN_OUTPUT_DIR` for each comparison.
 
 Generate plots from the new logs using the same environment:
 
@@ -100,7 +99,7 @@ in `FIDVR/runs/weak_bus14_demo/` include:
 | `feeder_1_distribution_bus_voltage_vs_time.png` | Monitored feeder voltage and stage intervals |
 | `feeder_1_fidvr_trajectory.png` | Motor/control-state trajectory |
 
-## Read the saved showcase figure
+## Saved simulation result
 
 The [README figure](FIDVR/feeder_1_distribution_bus_voltage_vs_time.png) comes
 from the saved 10-second case documented in [transmission.log](FIDVR/transmission.log)
